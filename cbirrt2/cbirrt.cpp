@@ -46,11 +46,11 @@ const double MAX_FIRSTIK_TIME   = 5.0; // in seconds
 //#define TRACK_COLLISIONS //comment this in if you want to create a file with collision information
 //#define RECORD_TIMES //comment this in if you want to record how much time the components of the algorithm take
 
-void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement)
+void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement, int prec)
 {
     stringstream s;
     s.setf(ios::fixed,ios::floatfield);
-    s.precision(5);
+    s.precision(prec);
     s << "\n"; 
     if(statement != NULL)
         s << statement <<"\n";
@@ -261,12 +261,19 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
 
     // invert for speed
     _jointResolutionInv.resize(_jointResolution.size());
+    RAVELOG_INFO("1\n");
     for (int i = 0; i < GetNumDOF(); i++) {
+        RAVELOG_INFO("2\n");
         _jointResolutionInv[i] = (dReal)1.0/_jointResolution[i];
+        RAVELOG_INFO("3\n");
         RAVELOG_DEBUG("   joint Resolution %d : %f   joint Resolution inv: %f\n", i, _jointResolution[i], _jointResolutionInv[i]);
+        RAVELOG_INFO("4\n");
     }
 
+    RAVELOG_INFO("5\n");
+
     P_SAMPLE_IK = _parameters->Psample;
+    RAVELOG_INFO("6\n");
     if(P_SAMPLE_IK == 0 && bDoingSampling)
     {
         RAVELOG_INFO("ERROR: there are chains defined for sampling but psample is 0.\n");
@@ -279,6 +286,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         _outputstream << "ERROR: psample is set to >0 but there are no chains defined for sampling\n";
         return false;
     }
+    RAVELOG_INFO("7\n");
 
     if(_parameters->bgrabbed)
     {
@@ -286,21 +294,60 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         _pRobot->GetGrabbed(vbodies);
         pheldobject = vbodies[0];
     }
+    RAVELOG_INFO("8\n");
 
     checkConfig.resize(GetNumDOF());
+    RAVELOG_INFO("9\n");
 
     _randomConfig.resize(GetNumDOF());
     _validRange.resize(GetNumDOF());
     _jointIncrement.resize(GetNumDOF());
+    RAVELOG_INFO("10\n");
 
   
     for (int i = 0; i < GetNumDOF(); i++) {
         _validRange[i] = _upperLimit[i] - _lowerLimit[i];
+        RAVELOG_INFO("11\n");
         assert(_validRange[i] > 0);
+        RAVELOG_INFO("12\n");
     }
 
-    _pForwardTree->_pMakeNext = new MakeNext(_pForwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this);
-    _pBackwardTree->_pMakeNext = new MakeNext(_pBackwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this);
+    assert(_parameters->vgravity.size() == 3);
+    Vector gravity(_parameters->vgravity[0], _parameters->vgravity[1], _parameters->vgravity[2]);
+    RAVELOG_INFO("12.1\n");
+
+    NEWMAT::Matrix path_giwc(_parameters->vpathsupportcone.size() / 6, 6);
+    if (_parameters->vpathsupportcone.empty()) {
+        path_giwc = 0.0;
+    } else {
+        path_giwc << &_parameters->vpathsupportcone.front();
+    }
+    RAVELOG_INFO("12.2\n");
+
+    NEWMAT::Matrix start_giwc(_parameters->vstartsupportcone.size() / 6, 6);
+    RAVELOG_INFO("12.2.1\n");
+    if (_parameters->vstartsupportcone.empty()) {
+        RAVELOG_INFO("12.2.2\n");
+        start_giwc = 0.0;
+    } else {
+        start_giwc << &_parameters->vstartsupportcone.front();
+        RAVELOG_INFO("12.2.3\n");
+    }
+    RAVELOG_INFO("12.3\n");
+
+    NEWMAT::Matrix goal_giwc(_parameters->vendsupportcone.size() / 6, 6);
+    if (_parameters->vendsupportcone.empty()) {
+        goal_giwc = 0.0;
+    } else {
+        goal_giwc << &_parameters->vendsupportcone.front();
+    }
+    RAVELOG_INFO("12.4\n");
+
+    RAVELOG_INFO("13\n");
+
+    _pForwardTree->_pMakeNext = new MakeNext(_pForwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, start_giwc);
+    _pBackwardTree->_pMakeNext = new MakeNext(_pBackwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, goal_giwc);
+    RAVELOG_INFO("14\n");
 
     RAVELOG_INFO("grabbed: %d\n",_parameters->bgrabbed);
 
@@ -361,7 +408,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
                 _outputstream << "Error: Start configuration "<< num_starts << " does not meet constraints\n";
 
                 SetDOF(_pInitConfig);
-                if(!_pForwardTree->_pMakeNext->CheckSupport())
+                if(!_pForwardTree->_pMakeNext->CheckSupport(true))
                 {
                     RAVELOG_INFO("CBirrtPlanner::InitPlan - Error: Start configuration %d is not in balance.\n",num_starts);
                     _outputstream << "Error: Start configuration "<< num_starts << " is not in balance\n";
@@ -469,7 +516,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
                 _outputstream << "Error: Goal configuration does not meet constraints:\n" << s.str();
 
                 SetDOF(_pGoalConfig);
-                if(!_pForwardTree->_pMakeNext->CheckSupport())
+                if(!_pForwardTree->_pMakeNext->CheckSupport(true))
                 {
                     RAVELOG_INFO("CBirrtPlanner::InitPlan - Error: Goal configuration %d is not in balance.\n",num_goals);
                     _outputstream << "Error: Goal configuration "<< num_goals << " is not in balance\n";
@@ -1427,7 +1474,7 @@ dReal CBirrtPlanner::CBirrtDistanceMetric::Eval(const void* c0, const void* c1)
 }
 
 
-CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner)
+CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner, Vector gravity, NEWMAT::Matrix path_giwc, NEWMAT::Matrix root_giwc)
 {
     _bFromGoal = bFromGoal;
     _probot = robot; 
@@ -1441,6 +1488,10 @@ CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robo
     oldoldConfig.resize(numdof);
     ancientConfig.resize(numdof);
     lastcollchecked.resize(numdof);
+
+    this->gravity = gravity;
+    this->path_giwc = path_giwc;
+    this->root_giwc = root_giwc;
 }
 
 bool CBirrtPlanner::MakeNext::MakeNodes(int TreeSize, RrtNode* StartNode, std::vector<dReal>* targetConfig,std::vector<RrtNode>* voutput,CBirrtPlanner* planner,bool bAllowGoPast)
@@ -1744,7 +1795,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 
             if(pvTtarg != NULL && mindist > TINY)
             {
-              //RAVELOG_INFO("ERROR: No constraint chain was able to achieve the sampled target for manipulator %d (dist: %f), are the constraint TSR chains defined to be a superset of the sampling TSR chains?\n",i,mindist);
+                RAVELOG_INFO("ERROR: No constraint chain was able to achieve the sampled target for manipulator %d (dist: %f), are the constraint TSR chains defined to be a superset of the sampling TSR chains?\n",i,mindist);
                 return false;
             }
 
@@ -1805,16 +1856,16 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 
             if(sqrt(totaltempdist) > STEP_LENGTH*2)
             {   
-                //PrintMatrix(&q_near[0], 1, q_near.size(), "q_near");        
+                //PrintMatrix(&q_near[0], 1, q_near.size(), "q_near");
                 //PrintMatrix(&q_s[0], 1, q_s.size(), "q_s");
                 RAVELOG_DEBUG("distance: %f\n",sqrt(totaltempdist));            
                 return false;
             }
-            //RAVELOG_INFO("distance: %f\n",sqrt(totaltempdist));            
+            //RAVELOG_INFO("distance: %f\n",sqrt(totaltempdist));
         }
         _planner->SetDOF(q_s);
 
-        return CheckSupport();
+        return CheckSupport(false);
     }
     else
     {
@@ -1829,11 +1880,20 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 }
 
 
-bool CBirrtPlanner::MakeNext::CheckSupport(bool bDraw)
+bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
 {
     bDraw = false;
-    if(_planner->_parameters->vsupportpolyx.size() == 0)
+
+    bool bConeSupport;
+    if (_planner->_parameters->vpathsupportcone.size() > 0 ||
+            _planner->_parameters->vendsupportcone.size() > 0 ||
+            _planner->_parameters->vstartsupportcone.size() > 0) {
+        bConeSupport = true;
+    } else if(_planner->_parameters->vsupportpolyx.size() > 0) {
+        bConeSupport = false;
+    } else {
         return true;
+    }
 
     Vector center;  
     dReal fTotalMass = 0;
@@ -1858,21 +1918,59 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bDraw)
     //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
 
 
+
     dReal testx = center.x;
     dReal testy = center.y;
     dReal * vertx = &_planner->_parameters->vsupportpolyx[0];
     dReal * verty = &_planner->_parameters->vsupportpolyy[0];
     int nvert = _planner->_parameters->vsupportpolyx.size();
 
-    int i, j, c = 0;
-    for (i = 0, j = nvert-1; i < nvert; j = i++) {
-    if ( ((verty[i]>testy) != (verty[j]>testy)) &&
-     (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
-       c = !c;
-    }
+    bool supported = false;
+    if (!bConeSupport) {
+        int i, j;
+        for (i = 0, j = nvert-1; i < nvert; j = i++) {
+        if ( ((verty[i]>testy) != (verty[j]>testy)) &&
+         (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
+           supported = !supported;
+        }
    
-    center.z = 0;
-    if(c)    
+        center.z = 0;
+    } else {
+        Vector crossprod = center.cross(gravity);
+
+        NEWMAT::ColumnVector giwc_test_vector(6);
+        giwc_test_vector << gravity.x << gravity.y << gravity.z
+                         << crossprod.x << crossprod.y << crossprod.z;
+
+        NEWMAT::ColumnVector result = path_giwc * giwc_test_vector;
+
+        supported = true;
+        // Test to see if any item in the result is less than 0
+        // NOTE: 1-indexed
+        for (int i = 1; i <= result.Nrows(); i++) {
+            if (result(i) < 0) {
+                supported = false;
+                break;
+            }
+        }
+
+        if (bAtRoot && supported) {
+            NEWMAT::ColumnVector result = root_giwc * giwc_test_vector;
+
+            supported = true;
+            // Test to see if any item in the result is less than 0
+            // NOTE: 1-indexed
+            for (int i = 1; i <= result.Nrows(); i++) {
+                if (result(i) < 0) {
+                    supported = false;
+                    break;
+                }
+            }
+        }
+
+    }
+
+    if(supported)
     {
         if(bDraw)
         {

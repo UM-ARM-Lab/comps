@@ -753,7 +753,7 @@ bool TaskSpaceRegionChain::deserialize_from_matlab(RobotBasePtr robot_in, Enviro
         _pmimicbody = penv_in->GetRobot(tempstring.c_str());
         if(_pmimicbody.get() == NULL)
         {
-            RAVELOG_INFO("Error: could not find the specified mimic body\n");
+            RAVELOG_INFO("Error: could not find the specified mimic body: %s\n", tempstring.c_str());
             return false;
         }
 

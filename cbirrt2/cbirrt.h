@@ -34,7 +34,7 @@
 
 #include <sstream>
 
-void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement);
+void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement, int prec = 5);
 
 /// class for nodes in search trees, contains configurations and other information
 class RrtNode {
@@ -132,7 +132,7 @@ public:
     class MakeNext
     {
     public:
-        MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner);
+        MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner, Vector gravity, NEWMAT::Matrix path_giwc, NEWMAT::Matrix root_giwc);
 
         ~MakeNext(){}
 
@@ -142,7 +142,7 @@ public:
         bool AddRootConfiguration(CBirrtPlanner::NodeTree* ptree,std::vector<dReal>& guess); ///< add a root configuration to the NodeTree
         int SampleTSRChainIndex(const std::vector<int>& TSRChaininds); ///< Pick a TSR Chain index to draw a sample from
         
-        bool CheckSupport(bool bDraw = false); ///< function to check balance
+        bool CheckSupport(bool bAtRoot, bool bDraw = false); ///< function to check balance
        
         EnvironmentBasePtr GetEnv(){ return _planner->GetEnv();} ///< return the planner's environment
 
@@ -171,6 +171,10 @@ public:
         std::vector<dReal> oldoldConfig;
         std::vector<dReal> ancientConfig;
         std::vector<dReal> lastcollchecked;
+
+        Vector gravity;
+        NEWMAT::Matrix path_giwc;
+        NEWMAT::Matrix root_giwc;
         
         struct timeval start_time, end_time; ///< for measuring hold long different parts of the algorithm take
     };
