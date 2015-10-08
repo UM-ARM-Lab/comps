@@ -32,8 +32,10 @@
 #ifndef CPROBLEM_H
 #define CPROBLEM_H
 
+#define GMPRATIONAL 1
 #include <cdd/setoper.h>
 #include <cdd/cdd.h>
+
 
 /// Parses input from python and matlab and calls cbirrtplanner, also contains some other useful openrave functions.
 class CBirrtProblem : public ProblemInstance

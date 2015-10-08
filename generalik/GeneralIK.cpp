@@ -48,8 +48,8 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _pRobot = _pmanip->GetRobot();
 
 
-    bPRINT = true; //! TODO: Put this back to false
-    bDRAW = true; //! TODO: Put this back to false
+    bPRINT = false;
+    bDRAW = false;
     bWRITETRAJ = false;
     bQUAT = false;
     bTRANSLATION_ONLY = false;

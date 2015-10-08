@@ -38,7 +38,8 @@ openrave_plugin("${PROJECT_NAME}_plugin"
 target_link_libraries("${PROJECT_NAME}_plugin"
     qhull
     newmat
-    cdd
+    cddgmp
+    gmp
     ${Boost_LIBRARIES}
     ${catkin_LIBRARIES}
 )

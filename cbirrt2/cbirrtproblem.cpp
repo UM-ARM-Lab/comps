@@ -920,19 +920,6 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
             GetGIWC(curr_support_manips, curr_support_mus, params->vstartsupportcone);
         }
 
-        // Path support
-        curr_support_manips.clear();
-        curr_support_mus.clear();
-        for (int i = 0; i < support_manips.size(); i++) {
-            if (support_modes[i] & 0b010) {
-                curr_support_manips.push_back(support_manips[i]);
-                curr_support_mus.push_back(support_mus[i]);
-            }
-        }
-        if (curr_support_manips.size() > 0) {
-            GetGIWC(curr_support_manips, curr_support_mus, params->vpathsupportcone);
-        }
-
         // End support
         curr_support_manips.clear();
         curr_support_mus.clear();
@@ -944,6 +931,19 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
         }
         if (curr_support_manips.size() > 0) {
             GetGIWC(curr_support_manips, curr_support_mus, params->vendsupportcone);
+        }
+
+        // Path support
+        curr_support_manips.clear();
+        curr_support_mus.clear();
+        for (int i = 0; i < support_manips.size(); i++) {
+            if (support_modes[i] & 0b010) {
+                curr_support_manips.push_back(support_manips[i]);
+                curr_support_mus.push_back(support_mus[i]);
+            }
+        }
+        if (curr_support_manips.size() > 0) {
+            GetGIWC(curr_support_manips, curr_support_mus, params->vpathsupportcone);
         }
     }
 
@@ -1645,6 +1645,9 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
 
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm(manip_ids, mus);
 
+    graphptrs.clear();
+    draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
+
     dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
     giwc_span_cdd->representation = dd_Generator;
 
@@ -1653,7 +1656,9 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
         dd_set_si(giwc_span_cdd->matrix[r][0], 0);
         for (int c = 0; c < giwc_span.Ncols(); c++) {
-            dd_set_d(giwc_span_cdd->matrix[r][c+1], giwc_span(r+1, c+1));
+            // It's legal to multiply an entire row by the same value (here 1e4)
+            // This rounds everything down to a fixed precision int
+            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
         }
     }
 
@@ -1670,7 +1675,7 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
     ikparams.push_back(giwc_face_cdd->rowsize);
 
     for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
-        // Note this skips element 0, which should always be 0
+        // Note this skips element 0 of each row, which should always be 0
         for (int col = 1; col < giwc_face_cdd->colsize; col++) {
             ikparams.push_back(dd_get_d(giwc_face_cdd->matrix[row][col]));
         }

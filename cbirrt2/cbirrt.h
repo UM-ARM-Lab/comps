@@ -137,7 +137,7 @@ public:
         ~MakeNext(){}
 
         bool MakeNodes(int TreeSize, RrtNode* StartNode, std::vector<dReal>* targetConfig,std::vector<RrtNode>* voutput,CBirrtPlanner* planner, bool bAllowGoPast); ///< main extension function
-        bool ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance = true, std::vector<Transform>* pvTtarg = NULL, bool bStartvsGoalSampling = false); ///< function that projects and/or rejects a configuration
+        bool ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance = true, std::vector<Transform>* pvTtarg = NULL, bool bStartvsGoalSampling = false, bool bAtRoot = false); ///< function that projects and/or rejects a configuration
 
         bool AddRootConfiguration(CBirrtPlanner::NodeTree* ptree,std::vector<dReal>& guess); ///< add a root configuration to the NodeTree
         int SampleTSRChainIndex(const std::vector<int>& TSRChaininds); ///< Pick a TSR Chain index to draw a sample from

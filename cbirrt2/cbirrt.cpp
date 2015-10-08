@@ -41,7 +41,7 @@ const dReal TINY               = 0.001; // used when checking equality of floats
 //the following are defaults, they can be ignored depending on external input
 const int   NUM_OPT_ITERATIONS = 300;  // optimization iterations
 const double MAX_TIME           = 25.0; // in seconds
-const double MAX_FIRSTIK_TIME   = 5.0; // in seconds
+const double MAX_FIRSTIK_TIME   = 25.0; // in seconds
 
 //#define TRACK_COLLISIONS //comment this in if you want to create a file with collision information
 //#define RECORD_TIMES //comment this in if you want to record how much time the components of the algorithm take
@@ -99,6 +99,7 @@ OpenRAVE::PlannerStatus CBirrtPlanner::CleanUpReturn(bool retval)
 
 }
 
+bool has_graphed = false;
 
 bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr pparams)
 {
@@ -261,19 +262,13 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
 
     // invert for speed
     _jointResolutionInv.resize(_jointResolution.size());
-    RAVELOG_INFO("1\n");
     for (int i = 0; i < GetNumDOF(); i++) {
-        RAVELOG_INFO("2\n");
         _jointResolutionInv[i] = (dReal)1.0/_jointResolution[i];
-        RAVELOG_INFO("3\n");
         RAVELOG_DEBUG("   joint Resolution %d : %f   joint Resolution inv: %f\n", i, _jointResolution[i], _jointResolutionInv[i]);
-        RAVELOG_INFO("4\n");
     }
 
-    RAVELOG_INFO("5\n");
 
     P_SAMPLE_IK = _parameters->Psample;
-    RAVELOG_INFO("6\n");
     if(P_SAMPLE_IK == 0 && bDoingSampling)
     {
         RAVELOG_INFO("ERROR: there are chains defined for sampling but psample is 0.\n");
@@ -286,7 +281,6 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         _outputstream << "ERROR: psample is set to >0 but there are no chains defined for sampling\n";
         return false;
     }
-    RAVELOG_INFO("7\n");
 
     if(_parameters->bgrabbed)
     {
@@ -294,60 +288,46 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         _pRobot->GetGrabbed(vbodies);
         pheldobject = vbodies[0];
     }
-    RAVELOG_INFO("8\n");
 
     checkConfig.resize(GetNumDOF());
-    RAVELOG_INFO("9\n");
 
     _randomConfig.resize(GetNumDOF());
     _validRange.resize(GetNumDOF());
     _jointIncrement.resize(GetNumDOF());
-    RAVELOG_INFO("10\n");
 
   
     for (int i = 0; i < GetNumDOF(); i++) {
         _validRange[i] = _upperLimit[i] - _lowerLimit[i];
-        RAVELOG_INFO("11\n");
         assert(_validRange[i] > 0);
-        RAVELOG_INFO("12\n");
     }
 
     assert(_parameters->vgravity.size() == 3);
     Vector gravity(_parameters->vgravity[0], _parameters->vgravity[1], _parameters->vgravity[2]);
-    RAVELOG_INFO("12.1\n");
 
     NEWMAT::Matrix path_giwc(_parameters->vpathsupportcone.size() / 6, 6);
     if (_parameters->vpathsupportcone.empty()) {
         path_giwc = 0.0;
     } else {
-        path_giwc << &_parameters->vpathsupportcone.front();
+        path_giwc << &_parameters->vpathsupportcone[1]; // The 0th element is the size, not used here
     }
-    RAVELOG_INFO("12.2\n");
 
     NEWMAT::Matrix start_giwc(_parameters->vstartsupportcone.size() / 6, 6);
-    RAVELOG_INFO("12.2.1\n");
     if (_parameters->vstartsupportcone.empty()) {
-        RAVELOG_INFO("12.2.2\n");
         start_giwc = 0.0;
     } else {
-        start_giwc << &_parameters->vstartsupportcone.front();
-        RAVELOG_INFO("12.2.3\n");
+        start_giwc << &_parameters->vstartsupportcone[1]; // The 0th element is the size, not used here
     }
-    RAVELOG_INFO("12.3\n");
 
     NEWMAT::Matrix goal_giwc(_parameters->vendsupportcone.size() / 6, 6);
     if (_parameters->vendsupportcone.empty()) {
         goal_giwc = 0.0;
     } else {
-        goal_giwc << &_parameters->vendsupportcone.front();
+        goal_giwc << &_parameters->vendsupportcone[1]; // The 0th element is the size, not used here
     }
-    RAVELOG_INFO("12.4\n");
 
-    RAVELOG_INFO("13\n");
-
+    has_graphed = false; // Used in the now-commented-out cone drawing code, remove it after debugging is done
     _pForwardTree->_pMakeNext = new MakeNext(_pForwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, start_giwc);
     _pBackwardTree->_pMakeNext = new MakeNext(_pBackwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, goal_giwc);
-    RAVELOG_INFO("14\n");
 
     RAVELOG_INFO("grabbed: %d\n",_parameters->bgrabbed);
 
@@ -861,7 +841,7 @@ void rand_perm(int N, std::vector<int>& p)
 
 bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptree, std::vector<dReal>& guess)
 {
-  //RAVELOG_INFO("starting addroot\n");
+//    RAVELOG_INFO("starting addroot\n");
 
     /// _planner->_parameters->bikfastsinglesolution controls whether to use the attached IK solver for a single IK solution with collision checking(1) or many solutions with no collision checking(0), if 0 these solutions will be col-checked later
 
@@ -892,12 +872,13 @@ bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptre
             continue;
 
         int sampleind = SampleTSRChainIndex(pvvManipToSamplingTSRChainind->at(i));
-        //RAVELOG_INFO("tsrchain ind: %d\n",sampleind);
+//        RAVELOG_INFO("tsrchain ind: %d\n",sampleind);
         vTtarg[i] = _planner->_parameters->vTSRChains[sampleind].GenerateSample();
 
         //if this manipulator has an attached IK solver, use it for initial guess(es)
         if(!!(_probot->GetManipulators()[i]->GetIkSolver()))
         {
+//            RAVELOG_INFO("Using attached IK solver\n");
             _planner->SetDOF(_planner->_randomConfig);
 
             std::vector< std::vector<dReal> > qSolutions;
@@ -961,22 +942,24 @@ bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptre
             }
             else
             {
-              //RAVELOG_INFO("Attached IK solver could not find a solution\n");
+                RAVELOG_INFO("Attached IK solver could not find a solution\n");
                 return false;
             }
         }
     }
 
     //if no guesses, put in the default guess
-    if(qGuesses.size() == 0)
+    if(qGuesses.size() == 0) {
         qGuesses.push_back(_planner->_randomConfig);
+//        RAVELOG_INFO("Using default guess\n");
+    }
 
     bool bGotSolution = false;
     for(int i = 0; i < qGuesses.size(); i++)
     {
         _planner->ClearTSRChainValues();
         // if a guess is valid, this will confirm it and return quickly, if not, it will try to use generalik to get an answer
-        if(ConstrainedNewConfig(qGuesses[i], q_near, _planner->vTSRChainValues_temp,false, &vTtarg, !ptree->GetFromGoal()) && !(_planner->_CheckCollision(qGuesses[i]) ))
+        if(ConstrainedNewConfig(qGuesses[i], q_near, _planner->vTSRChainValues_temp,false, &vTtarg, !ptree->GetFromGoal(), true) && !(_planner->_CheckCollision(qGuesses[i]) ))
         {
             
             RrtNode * pikNode = new RrtNode(_planner->GetNumDOF(),ptree->GetFromGoal(),ptree->GetSize());
@@ -1706,8 +1689,7 @@ bool CBirrtPlanner::MakeNext::MakeNodes(int TreeSize, RrtNode* StartNode, std::v
     return success;
 }
 
-
-bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance, std::vector<Transform>* pvTtarg, bool bStartvsGoalSampling)
+bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance, std::vector<Transform>* pvTtarg, bool bStartvsGoalSampling, bool bAtRoot)
 {
     _planner->projectioncalls++;
     std::vector<dReal> q0 = q_s;
@@ -1836,6 +1818,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
     double starttime = timeGetThreadTime();
 #endif
 
+//    RAVELOG_INFO("Starting GeneralIK\n");
     if(numtargets == 0 || _planner->_pIkSolver->Solve(IkParameterization(), q0, ikparams, false, pq_s) )
     {   
 #ifdef RECORD_TIMES
@@ -1845,7 +1828,8 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
         //RAVELOG_INFO("robot ik found\n");
         if(bCheckDistance)
         {
-            
+//            RAVELOG_INFO("Checking distance\n");
+
             totaltempdist = 0;
             for (int i = 0; i < q_s.size(); i++)
             {
@@ -1865,7 +1849,65 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
         }
         _planner->SetDOF(q_s);
 
-        return CheckSupport(false);
+        bool checksupport = CheckSupport(bAtRoot);
+
+//        if (!has_graphed && root_giwc.Nrows() > 0) {
+//            has_graphed = true;
+//            RAVELOG_INFO("Graphing cones, path cone: %d, root cone: %d\n", path_giwc.Nrows(), root_giwc.Nrows());
+//            RAVELOG_INFO("Gravity: %f, %f, %f\n", gravity.x, gravity.y, gravity.z);
+////            graphptrs.clear();
+//            const float pathcolor[] = {0, 1, 0, 1};
+//            const float rootcolor[] = {0, 0, 1, 1};
+//            const float bothcolor[] = {0, 1, 1, 1};
+//            for (dReal x = -1.0; x < 1.0; x += 0.1) {
+//                for (dReal y = -1.0; y < 1.0; y += 0.1) {
+//                    for (dReal z = 0.0; z < 2.0; z += 0.1) {
+////                        RAVELOG_INFO("Testing %f, %f, %f\n", x, y, z);
+//                        Vector center(x, y, z, 1);
+//                        Vector crossprod = center.cross(gravity);
+
+//                        NEWMAT::ColumnVector giwc_test_vector(6);
+//                        giwc_test_vector << gravity.x << gravity.y << gravity.z
+//                                         << crossprod.x << crossprod.y << crossprod.z;
+
+////                        PrintMatrix(giwc_test_vector.Store(), 6, 1, "Test vector");
+
+//                        NEWMAT::ColumnVector result = path_giwc * giwc_test_vector;
+
+//                        bool supported = true;
+//                        // Test to see if any item in the result is less than 0
+//                        // NOTE: 1-indexed
+//                        for (int i = 1; i <= result.Nrows(); i++) {
+//                            if (result(i) < 0) {
+////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
+//                                supported = false;
+//                                break;
+//                            }
+//                        }
+
+//                        result = root_giwc * giwc_test_vector;
+//                        bool rootSupported = true;
+//                        for (int i = 1; i <= result.Nrows(); i++) {
+//                            if (result(i) < 0) {
+////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
+//                                rootSupported = false;
+//                                break;
+//                            }
+//                        }
+
+//                        if (supported || rootSupported) {
+//                            float plot_center[3];
+//                            plot_center[0] = x; plot_center[1] = y; plot_center[2] = z;
+
+//                            const float* color = (supported && rootSupported) ? bothcolor : (supported ? pathcolor : rootcolor);
+//                            graphptrs.push_back(GetEnv()->plot3(plot_center, 1, 3, 5, color));
+//                        }
+//                    }
+//                }
+//            }
+//        }
+
+        return checksupport;
     }
     else
     {
@@ -1874,6 +1916,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 #endif
         q_s = *pq_s.get();
         //RAVELOG_INFO("Projection failed\n");
+//        RAVELOG_INFO("GeneralIK Failed\n");
         return false;
     }
     return false;
@@ -1882,8 +1925,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 
 bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
 {
-    bDraw = false;
-
+//    RAVELOG_INFO("CheckSupport At root: %d\n", bAtRoot);
     bool bConeSupport;
     if (_planner->_parameters->vpathsupportcone.size() > 0 ||
             _planner->_parameters->vendsupportcone.size() > 0 ||
@@ -1918,15 +1960,14 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
     //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
 
 
-
-    dReal testx = center.x;
-    dReal testy = center.y;
-    dReal * vertx = &_planner->_parameters->vsupportpolyx[0];
-    dReal * verty = &_planner->_parameters->vsupportpolyy[0];
-    int nvert = _planner->_parameters->vsupportpolyx.size();
-
     bool supported = false;
     if (!bConeSupport) {
+        dReal testx = center.x;
+        dReal testy = center.y;
+        dReal * vertx = &_planner->_parameters->vsupportpolyx[0];
+        dReal * verty = &_planner->_parameters->vsupportpolyy[0];
+
+        int nvert = _planner->_parameters->vsupportpolyx.size();
         int i, j;
         for (i = 0, j = nvert-1; i < nvert; j = i++) {
         if ( ((verty[i]>testy) != (verty[j]>testy)) &&
@@ -1954,6 +1995,8 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
             }
         }
 
+//        RAVELOG_INFO("Supported by path constraint: %d\n", supported);
+
         if (bAtRoot && supported) {
             NEWMAT::ColumnVector result = root_giwc * giwc_test_vector;
 
@@ -1966,6 +2009,8 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
                     break;
                 }
             }
+
+//            RAVELOG_INFO("Supported by root constraint: %d\n", supported);
         }
 
     }
