@@ -41,7 +41,7 @@ const dReal TINY               = 0.001; // used when checking equality of floats
 //the following are defaults, they can be ignored depending on external input
 const int   NUM_OPT_ITERATIONS = 300;  // optimization iterations
 const double MAX_TIME           = 25.0; // in seconds
-const double MAX_FIRSTIK_TIME   = 25.0; // in seconds
+const double MAX_FIRSTIK_TIME   = 5.0; // in seconds
 
 //#define TRACK_COLLISIONS //comment this in if you want to create a file with collision information
 //#define RECORD_TIMES //comment this in if you want to record how much time the components of the algorithm take
