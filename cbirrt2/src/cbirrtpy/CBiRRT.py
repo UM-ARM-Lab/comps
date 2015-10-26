@@ -335,19 +335,15 @@ class CBiRRT(object):
 
         if execute is not None:
             cmd.append("exec")
-            cmd.append(int(execute))
 
         if gettime is not None:
             cmd.append("gettime")
-            cmd.append(int(gettime))
 
         if norot is not None:
             cmd.append("norot")
-            cmd.append(int(norot))
 
         if returnclosest is not None:
             cmd.append("returnclosest")
-            cmd.append(int(returnclosest))
 
         if robottm is not None:
             cmd.append("robottm")
