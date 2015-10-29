@@ -46,11 +46,11 @@ const double MAX_FIRSTIK_TIME   = 5.0; // in seconds
 //#define TRACK_COLLISIONS //comment this in if you want to create a file with collision information
 //#define RECORD_TIMES //comment this in if you want to record how much time the components of the algorithm take
 
-void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement)
+void  PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement, int prec)
 {
     stringstream s;
     s.setf(ios::fixed,ios::floatfield);
-    s.precision(5);
+    s.precision(prec);
     s << "\n"; 
     if(statement != NULL)
         s << statement <<"\n";
@@ -99,6 +99,7 @@ OpenRAVE::PlannerStatus CBirrtPlanner::CleanUpReturn(bool retval)
 
 }
 
+bool has_graphed = false;
 
 bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr pparams)
 {
@@ -266,6 +267,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         RAVELOG_DEBUG("   joint Resolution %d : %f   joint Resolution inv: %f\n", i, _jointResolution[i], _jointResolutionInv[i]);
     }
 
+
     P_SAMPLE_IK = _parameters->Psample;
     if(P_SAMPLE_IK == 0 && bDoingSampling)
     {
@@ -299,8 +301,33 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
         assert(_validRange[i] > 0);
     }
 
-    _pForwardTree->_pMakeNext = new MakeNext(_pForwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this);
-    _pBackwardTree->_pMakeNext = new MakeNext(_pBackwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this);
+    assert(_parameters->vgravity.size() == 3);
+    Vector gravity(_parameters->vgravity[0], _parameters->vgravity[1], _parameters->vgravity[2]);
+
+    NEWMAT::Matrix path_giwc(_parameters->vpathsupportcone.size() / 6, 6);
+    if (_parameters->vpathsupportcone.empty()) {
+        path_giwc = 0.0;
+    } else {
+        path_giwc << &_parameters->vpathsupportcone[1]; // The 0th element is the size, not used here
+    }
+
+    NEWMAT::Matrix start_giwc(_parameters->vstartsupportcone.size() / 6, 6);
+    if (_parameters->vstartsupportcone.empty()) {
+        start_giwc = 0.0;
+    } else {
+        start_giwc << &_parameters->vstartsupportcone[1]; // The 0th element is the size, not used here
+    }
+
+    NEWMAT::Matrix goal_giwc(_parameters->vendsupportcone.size() / 6, 6);
+    if (_parameters->vendsupportcone.empty()) {
+        goal_giwc = 0.0;
+    } else {
+        goal_giwc << &_parameters->vendsupportcone[1]; // The 0th element is the size, not used here
+    }
+
+    has_graphed = false; // Used in the now-commented-out cone drawing code, remove it after debugging is done
+    _pForwardTree->_pMakeNext = new MakeNext(_pForwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, start_giwc);
+    _pBackwardTree->_pMakeNext = new MakeNext(_pBackwardTree->GetFromGoal(),GetNumDOF(),_pRobot,this, gravity, path_giwc, goal_giwc);
 
     RAVELOG_INFO("grabbed: %d\n",_parameters->bgrabbed);
 
@@ -361,7 +388,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
                 _outputstream << "Error: Start configuration "<< num_starts << " does not meet constraints\n";
 
                 SetDOF(_pInitConfig);
-                if(!_pForwardTree->_pMakeNext->CheckSupport())
+                if(!_pForwardTree->_pMakeNext->CheckSupport(true))
                 {
                     RAVELOG_INFO("CBirrtPlanner::InitPlan - Error: Start configuration %d is not in balance.\n",num_starts);
                     _outputstream << "Error: Start configuration "<< num_starts << " is not in balance\n";
@@ -469,7 +496,7 @@ bool CBirrtPlanner::InitPlan(RobotBasePtr  pbase, PlannerParametersConstPtr ppar
                 _outputstream << "Error: Goal configuration does not meet constraints:\n" << s.str();
 
                 SetDOF(_pGoalConfig);
-                if(!_pForwardTree->_pMakeNext->CheckSupport())
+                if(!_pForwardTree->_pMakeNext->CheckSupport(true))
                 {
                     RAVELOG_INFO("CBirrtPlanner::InitPlan - Error: Goal configuration %d is not in balance.\n",num_goals);
                     _outputstream << "Error: Goal configuration "<< num_goals << " is not in balance\n";
@@ -813,7 +840,7 @@ void rand_perm(int N, std::vector<int>& p)
 
 bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptree, std::vector<dReal>& guess)
 {
-  //RAVELOG_INFO("starting addroot\n");
+//    RAVELOG_INFO("starting addroot\n");
 
     /// _planner->_parameters->bikfastsinglesolution controls whether to use the attached IK solver for a single IK solution with collision checking(1) or many solutions with no collision checking(0), if 0 these solutions will be col-checked later
 
@@ -844,12 +871,13 @@ bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptre
             continue;
 
         int sampleind = SampleTSRChainIndex(pvvManipToSamplingTSRChainind->at(i));
-        //RAVELOG_INFO("tsrchain ind: %d\n",sampleind);
+//        RAVELOG_INFO("tsrchain ind: %d\n",sampleind);
         vTtarg[i] = _planner->_parameters->vTSRChains[sampleind].GenerateSample();
 
         //if this manipulator has an attached IK solver, use it for initial guess(es)
         if(!!(_probot->GetManipulators()[i]->GetIkSolver()))
         {
+//            RAVELOG_INFO("Using attached IK solver\n");
             _planner->SetDOF(_planner->_randomConfig);
 
             std::vector< std::vector<dReal> > qSolutions;
@@ -913,22 +941,24 @@ bool CBirrtPlanner::MakeNext::AddRootConfiguration(CBirrtPlanner::NodeTree* ptre
             }
             else
             {
-              //RAVELOG_INFO("Attached IK solver could not find a solution\n");
+                RAVELOG_INFO("Attached IK solver could not find a solution\n");
                 return false;
             }
         }
     }
 
     //if no guesses, put in the default guess
-    if(qGuesses.size() == 0)
+    if(qGuesses.size() == 0) {
         qGuesses.push_back(_planner->_randomConfig);
+//        RAVELOG_INFO("Using default guess\n");
+    }
 
     bool bGotSolution = false;
     for(int i = 0; i < qGuesses.size(); i++)
     {
         _planner->ClearTSRChainValues();
         // if a guess is valid, this will confirm it and return quickly, if not, it will try to use generalik to get an answer
-        if(ConstrainedNewConfig(qGuesses[i], q_near, _planner->vTSRChainValues_temp,false, &vTtarg, !ptree->GetFromGoal()) && !(_planner->_CheckCollision(qGuesses[i]) ))
+        if(ConstrainedNewConfig(qGuesses[i], q_near, _planner->vTSRChainValues_temp,false, &vTtarg, !ptree->GetFromGoal(), true) && !(_planner->_CheckCollision(qGuesses[i]) ))
         {
             
             RrtNode * pikNode = new RrtNode(_planner->GetNumDOF(),ptree->GetFromGoal(),ptree->GetSize());
@@ -1426,7 +1456,7 @@ dReal CBirrtPlanner::CBirrtDistanceMetric::Eval(const void* c0, const void* c1)
 }
 
 
-CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner)
+CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robot, CBirrtPlanner * planner, Vector gravity, NEWMAT::Matrix path_giwc, NEWMAT::Matrix root_giwc)
 {
     _bFromGoal = bFromGoal;
     _probot = robot; 
@@ -1440,6 +1470,10 @@ CBirrtPlanner::MakeNext::MakeNext(bool bFromGoal, int numdof, RobotBasePtr  robo
     oldoldConfig.resize(numdof);
     ancientConfig.resize(numdof);
     lastcollchecked.resize(numdof);
+
+    this->gravity = gravity;
+    this->path_giwc = path_giwc;
+    this->root_giwc = root_giwc;
 }
 
 bool CBirrtPlanner::MakeNext::MakeNodes(int TreeSize, RrtNode* StartNode, std::vector<dReal>* targetConfig,std::vector<RrtNode>* voutput,CBirrtPlanner* planner,bool bAllowGoPast)
@@ -1654,8 +1688,7 @@ bool CBirrtPlanner::MakeNext::MakeNodes(int TreeSize, RrtNode* StartNode, std::v
     return success;
 }
 
-
-bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance, std::vector<Transform>* pvTtarg, bool bStartvsGoalSampling)
+bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std::vector<dReal>& q_near, std::vector<dReal>& vTSRChainValues, bool bCheckDistance, std::vector<Transform>* pvTtarg, bool bStartvsGoalSampling, bool bAtRoot)
 {
     _planner->projectioncalls++;
     std::vector<dReal> q0 = q_s;
@@ -1743,7 +1776,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 
             if(pvTtarg != NULL && mindist > TINY)
             {
-              //RAVELOG_INFO("ERROR: No constraint chain was able to achieve the sampled target for manipulator %d (dist: %f), are the constraint TSR chains defined to be a superset of the sampling TSR chains?\n",i,mindist);
+                RAVELOG_INFO("ERROR: No constraint chain was able to achieve the sampled target for manipulator %d (dist: %f), are the constraint TSR chains defined to be a superset of the sampling TSR chains?\n",i,mindist);
                 return false;
             }
 
@@ -1784,6 +1817,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
     double starttime = timeGetThreadTime();
 #endif
 
+//    RAVELOG_INFO("Starting GeneralIK\n");
     if(numtargets == 0 || _planner->_pIkSolver->Solve(IkParameterization(), q0, ikparams, false, pq_s) )
     {   
 #ifdef RECORD_TIMES
@@ -1793,7 +1827,8 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
         //RAVELOG_INFO("robot ik found\n");
         if(bCheckDistance)
         {
-            
+//            RAVELOG_INFO("Checking distance\n");
+
             totaltempdist = 0;
             for (int i = 0; i < q_s.size(); i++)
             {
@@ -1804,16 +1839,74 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 
             if(sqrt(totaltempdist) > STEP_LENGTH*2)
             {   
-                //PrintMatrix(&q_near[0], 1, q_near.size(), "q_near");        
+                //PrintMatrix(&q_near[0], 1, q_near.size(), "q_near");
                 //PrintMatrix(&q_s[0], 1, q_s.size(), "q_s");
                 RAVELOG_DEBUG("distance: %f\n",sqrt(totaltempdist));            
                 return false;
             }
-            //RAVELOG_INFO("distance: %f\n",sqrt(totaltempdist));            
+            //RAVELOG_INFO("distance: %f\n",sqrt(totaltempdist));
         }
         _planner->SetDOF(q_s);
 
-        return CheckSupport();
+        bool checksupport = CheckSupport(bAtRoot);
+
+//        if (!has_graphed && root_giwc.Nrows() > 0) {
+//            has_graphed = true;
+//            RAVELOG_INFO("Graphing cones, path cone: %d, root cone: %d\n", path_giwc.Nrows(), root_giwc.Nrows());
+//            RAVELOG_INFO("Gravity: %f, %f, %f\n", gravity.x, gravity.y, gravity.z);
+////            graphptrs.clear();
+//            const float pathcolor[] = {0, 1, 0, 1};
+//            const float rootcolor[] = {0, 0, 1, 1};
+//            const float bothcolor[] = {0, 1, 1, 1};
+//            for (dReal x = -1.0; x < 1.0; x += 0.1) {
+//                for (dReal y = -1.0; y < 1.0; y += 0.1) {
+//                    for (dReal z = 0.0; z < 2.0; z += 0.1) {
+////                        RAVELOG_INFO("Testing %f, %f, %f\n", x, y, z);
+//                        Vector center(x, y, z, 1);
+//                        Vector crossprod = center.cross(gravity);
+
+//                        NEWMAT::ColumnVector giwc_test_vector(6);
+//                        giwc_test_vector << gravity.x << gravity.y << gravity.z
+//                                         << crossprod.x << crossprod.y << crossprod.z;
+
+////                        PrintMatrix(giwc_test_vector.Store(), 6, 1, "Test vector");
+
+//                        NEWMAT::ColumnVector result = path_giwc * giwc_test_vector;
+
+//                        bool supported = true;
+//                        // Test to see if any item in the result is less than 0
+//                        // NOTE: 1-indexed
+//                        for (int i = 1; i <= result.Nrows(); i++) {
+//                            if (result(i) < 0) {
+////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
+//                                supported = false;
+//                                break;
+//                            }
+//                        }
+
+//                        result = root_giwc * giwc_test_vector;
+//                        bool rootSupported = true;
+//                        for (int i = 1; i <= result.Nrows(); i++) {
+//                            if (result(i) < 0) {
+////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
+//                                rootSupported = false;
+//                                break;
+//                            }
+//                        }
+
+//                        if (supported || rootSupported) {
+//                            float plot_center[3];
+//                            plot_center[0] = x; plot_center[1] = y; plot_center[2] = z;
+
+//                            const float* color = (supported && rootSupported) ? bothcolor : (supported ? pathcolor : rootcolor);
+//                            graphptrs.push_back(GetEnv()->plot3(plot_center, 1, 3, 5, color));
+//                        }
+//                    }
+//                }
+//            }
+//        }
+
+        return checksupport;
     }
     else
     {
@@ -1822,17 +1915,26 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
 #endif
         q_s = *pq_s.get();
         //RAVELOG_INFO("Projection failed\n");
+//        RAVELOG_INFO("GeneralIK Failed\n");
         return false;
     }
     return false;
 }
 
 
-bool CBirrtPlanner::MakeNext::CheckSupport(bool bDraw)
+bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
 {
-    bDraw = false;
-    if(_planner->_parameters->vsupportpolyx.size() == 0)
+//    RAVELOG_INFO("CheckSupport At root: %d\n", bAtRoot);
+    bool bConeSupport;
+    if (_planner->_parameters->vpathsupportcone.size() > 0 ||
+            _planner->_parameters->vendsupportcone.size() > 0 ||
+            _planner->_parameters->vstartsupportcone.size() > 0) {
+        bConeSupport = true;
+    } else if(_planner->_parameters->vsupportpolyx.size() > 0) {
+        bConeSupport = false;
+    } else {
         return true;
+    }
 
     Vector center;  
     dReal fTotalMass = 0;
@@ -1857,21 +1959,62 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bDraw)
     //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
 
 
-    dReal testx = center.x;
-    dReal testy = center.y;
-    dReal * vertx = &_planner->_parameters->vsupportpolyx[0];
-    dReal * verty = &_planner->_parameters->vsupportpolyy[0];
-    int nvert = _planner->_parameters->vsupportpolyx.size();
+    bool supported = false;
+    if (!bConeSupport) {
+        dReal testx = center.x;
+        dReal testy = center.y;
+        dReal * vertx = &_planner->_parameters->vsupportpolyx[0];
+        dReal * verty = &_planner->_parameters->vsupportpolyy[0];
 
-    int i, j, c = 0;
-    for (i = 0, j = nvert-1; i < nvert; j = i++) {
-    if ( ((verty[i]>testy) != (verty[j]>testy)) &&
-     (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
-       c = !c;
-    }
+        int nvert = _planner->_parameters->vsupportpolyx.size();
+        int i, j;
+        for (i = 0, j = nvert-1; i < nvert; j = i++) {
+        if ( ((verty[i]>testy) != (verty[j]>testy)) &&
+         (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
+           supported = !supported;
+        }
    
-    center.z = 0;
-    if(c)    
+        center.z = 0;
+    } else {
+        Vector crossprod = center.cross(gravity);
+
+        NEWMAT::ColumnVector giwc_test_vector(6);
+        giwc_test_vector << gravity.x << gravity.y << gravity.z
+                         << crossprod.x << crossprod.y << crossprod.z;
+
+        NEWMAT::ColumnVector result = path_giwc * giwc_test_vector;
+
+        supported = true;
+        // Test to see if any item in the result is less than 0
+        // NOTE: 1-indexed
+        for (int i = 1; i <= result.Nrows(); i++) {
+            if (result(i) < 0) {
+                supported = false;
+                break;
+            }
+        }
+
+//        RAVELOG_INFO("Supported by path constraint: %d\n", supported);
+
+        if (bAtRoot && supported) {
+            NEWMAT::ColumnVector result = root_giwc * giwc_test_vector;
+
+            supported = true;
+            // Test to see if any item in the result is less than 0
+            // NOTE: 1-indexed
+            for (int i = 1; i <= result.Nrows(); i++) {
+                if (result(i) < 0) {
+                    supported = false;
+                    break;
+                }
+            }
+
+//            RAVELOG_INFO("Supported by root constraint: %d\n", supported);
+        }
+
+    }
+
+    if(supported)
     {
         if(bDraw)
         {

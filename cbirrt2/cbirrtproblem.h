@@ -32,6 +32,11 @@
 #ifndef CPROBLEM_H
 #define CPROBLEM_H
 
+#define GMPRATIONAL 1
+#include <cdd/setoper.h>
+#include <cdd/cdd.h>
+
+
 /// Parses input from python and matlab and calls cbirrtplanner, also contains some other useful openrave functions.
 class CBirrtProblem : public ProblemInstance
 {
@@ -85,6 +90,21 @@ private:
 
     ///function to compute centroid of 2D polygon
     Point2D compute2DPolygonCentroid(const Point2D* vertices, int vertexCount);
+
+    /// TODO: Document
+    void GetSupportPointsForLink(RobotBase::LinkPtr p_link, OpenRAVE::Vector tool_dir, Transform result_tf, std::vector<Vector>& contacts);
+    std::vector<Vector> GetSupportPoints(RobotBase::ManipulatorPtr p_manip);
+
+    void GetFrictionCone(OpenRAVE::Vector &center, OpenRAVE::Vector &direction, dReal mu, NEWMAT::Matrix *mat, int offset_r, int offset_c, Transform temp_tf);
+    void GetASurf(RobotBase::ManipulatorPtr p_manip, Transform cone_tf, NEWMAT::Matrix *mat, int offset_r);
+    void GetAStance(Transform cone_tf, NEWMAT::Matrix* mat, int offset_r);
+
+    /// compute the surface support cone for the given manipulator
+    NEWMAT::ReturnMatrix GetSurfaceCone(string& manipname, dReal mu);
+
+    /// compute the GIWC for giwc stability
+    NEWMAT::ReturnMatrix GetGIWCSpanForm(std::vector<std::string>& manip_ids, std::vector<dReal>& friction_coeffs);
+    void GetGIWC(std::vector<std::string>& manip_ids, std::vector<dReal>& friction_coeffs, std::vector<dReal>& ikparams);
 
     /// compute a support polygon based on what links are touching the ground
     void GetSupportPolygon(std::vector<string>& supportlinks, std::vector<dReal>& polyx, std::vector<dReal>& polyy, Vector polyscale = Vector(1.0,1.0,1.0), Vector polytrans = Vector(1.0,1.0,1.0));

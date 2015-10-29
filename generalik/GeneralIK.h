@@ -32,13 +32,20 @@
 #ifndef  GENERALIK_H
 #define  GENERALIK_H
 
+#include <cdd/setoper.h>
+#include <cdd/cdd.h>
+
+enum BalanceMode {
+    BALANCE_NONE,
+    BALANCE_SUPPORT_POLYGON,
+    BALANCE_GIWC
+};
 
 class GeneralIK : public IkSolverBase
 {
 public:
 
     GeneralIK(EnvironmentBasePtr penv);
-
 
 #if OPENRAVE_VERSION >= OPENRAVE_VERSION_COMBINED(0,7,0)
     bool Solve(const IkParameterization& param, const std::vector<dReal>& q0, int, boost::shared_ptr<std::vector<dReal> > result, IkReturnPtr) { return false; }
@@ -108,11 +115,14 @@ private:
     std::vector<dReal> _lowerLimit, _upperLimit;
     Vector cogtarg;
     Vector curcog;
-    bool bBalance;
+    BalanceMode balance_mode;
     NEWMAT::ColumnVector balancedx;
     std::vector<Vector> solutionpath;
     TrajectoryBasePtr ptraj;
     //Trajectory::TPOINT _trajpoint;
+
+    Vector gravity;
+    NEWMAT::Matrix giwc;
 
     //used in the _Solve loop
     bool bBalanceGradient;

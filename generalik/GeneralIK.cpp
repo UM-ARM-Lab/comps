@@ -78,7 +78,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     curquat.ReSize(4);
     angveltoquat.ReSize(4,4);
 
-    bBalance = false;
+    balance_mode = BALANCE_NONE;
 
     return true;
 }
@@ -122,7 +122,7 @@ void GeneralIK::ResizeMatrices()
 bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>& q0, const std::vector<dReal>& vFreeParameters, int filteroptions, boost::shared_ptr< std::vector<dReal> > result)
 {
 
-    int activemanipind = _pRobot->GetActiveManipulatorIndex();
+    RobotBase::ManipulatorConstPtr activemanip_p = _pRobot->GetActiveManipulator();
 
     dReal* qResult = &(*result.get())[0];
     const dReal* pFreeParameters = &vFreeParameters[0];
@@ -147,20 +147,24 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     //read in the ik targets
 
     int numtargets = (int) pFreeParameters[0];
-    
+
     for(int i = 0; i < numtargets; i++)
     {
         _targmanips.push_back(pFreeParameters[i*8 + 1]);
         _targtms.push_back(Transform(Vector(pFreeParameters[i*8 + 2],pFreeParameters[i*8 + 3],pFreeParameters[i*8 + 4],pFreeParameters[i*8 + 5]),Vector(pFreeParameters[i*8 + 6],pFreeParameters[i*8 + 7],pFreeParameters[i*8 + 8]) ));
-        if(bPRINT)       
+        if(bPRINT)
              RAVELOG_INFO("Targtm: %f %f %f %f    %f %f %f\n",_targtms[i].rot.x,_targtms[i].rot.y,_targtms[i].rot.z,_targtms[i].rot.w,_targtms[i].trans.x,_targtms[i].trans.y,_targtms[i].trans.z);
     }
 
     int offset = numtargets*8 + 1;
 
     //read in cog target if there is one
-    if((bool)pFreeParameters[offset++])
+    int support_mode = (int) pFreeParameters[offset++];
+    if(support_mode == 1)
     {
+        if (bPRINT)
+            RAVELOG_INFO("Support mode: Support polygon \n");
+
         cogtarg.x = pFreeParameters[offset++];
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
@@ -192,12 +196,61 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
                 RAVELOG_INFO("x: %f    y:%f\n",_vsupportpolyx[i],_vsupportpolyy[i]);
         }
 
-        bBalance = true;
+        balance_mode = BALANCE_SUPPORT_POLYGON;
+    }
+    else if (support_mode == 2) {
+        if (bPRINT)
+            RAVELOG_INFO("Support mode: Gravito-Inertial Wrench Cone\n");
+
+        gravity.x = pFreeParameters[offset++];
+        gravity.y = pFreeParameters[offset++];
+        gravity.z = pFreeParameters[offset++];
+
+        int rowsize = (int) pFreeParameters[offset++];
+
+        giwc.ReSize(rowsize, 6);
+        // NOTE: 1-indexed
+        for (int r = 1; r <= rowsize; r++) {
+            for (int c = 1; c <= 6; c++) {
+                giwc(r, c) = pFreeParameters[offset++];
+            }
+        }
+
+        balance_mode = BALANCE_GIWC;
     }
     else
+
     {
-        bBalance = false;
+        balance_mode = BALANCE_NONE;
     }
+
+//    //! TEST
+//    bPRINT = false; bDRAW = false;
+//    std::vector<float> green;
+//    std::vector<float> red;
+//    for (dReal x = -1; x < 1; x += 0.05) {
+//        for (dReal y = -1; y < 1; y += 0.05) {
+//            for (dReal z = 0; z < 2; z += 0.05) {
+//                Vector center(x, y, z, 1);
+//                if (CheckSupport(center)) {
+//                    green.push_back(x);
+//                    green.push_back(y);
+//                    green.push_back(z);
+//                } else {
+////                    red.push_back(x);
+////                    red.push_back(y);
+////                    red.push_back(z);
+//                }
+//                if (green.size() > 0)
+//                    graphptrs.push_back(GetEnv()->plot3(&green.front(), green.size()/3, 3, 5, Vector(0, 1, 0, 1)));
+//                green.clear();
+//                if (red.size() > 0)
+//                    graphptrs.push_back(GetEnv()->plot3(&red.front(), red.size()/3, 3, 5, Vector(1, 0, 0, 1)));
+//                red.clear();
+//            }
+//        }
+//    }
+//    bPRINT = true; bDRAW = true;
 
     //this used to be a mode but is currently ignored
     int junk = (int)pFreeParameters[offset++]; //mode = (GeneralIK::Mode)pFreeParameters[offset++];
@@ -273,7 +326,8 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     if(bWRITETRAJ)
         WriteTraj();
 
-    _pRobot->SetActiveManipulator(activemanipind);
+    _pRobot->SetActiveManipulator(activemanip_p);
+
     return (bsuccess);
 
 }
@@ -581,36 +635,60 @@ void GeneralIK::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
 
 bool GeneralIK::CheckSupport(Vector center)
 {
-    //return true;
-    int nvert = _vsupportpolyx.size();
-    if(nvert == 0)
-        return false;
+    bool balanced = false;
+    if (balance_mode == BALANCE_SUPPORT_POLYGON) {
+        int nvert = _vsupportpolyx.size();
+        if(nvert == 0)
+            return false;
 
 
-    dReal testx = center.x;
-    dReal testy = center.y;
-    dReal * vertx = &_vsupportpolyx[0];
-    dReal * verty = &_vsupportpolyy[0];
-    
+        dReal testx = center.x;
+        dReal testy = center.y;
+        dReal * vertx = &_vsupportpolyx[0];
+        dReal * verty = &_vsupportpolyy[0];
 
-    int i, j, c = 0;
-    for (i = 0, j = nvert-1; i < nvert; j = i++) {
-    if ( ((verty[i]>testy) != (verty[j]>testy)) &&
-     (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
-       c = !c;
+
+        int i, j;
+        for (i = 0, j = nvert-1; i < nvert; j = i++) {
+        if ( ((verty[i]>testy) != (verty[j]>testy)) &&
+         (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
+           balanced = !balanced;
+        }
+
+        center.z = 0;
+    } else if (balance_mode == BALANCE_GIWC) {
+        Vector crossprod = center.cross(gravity);
+
+        NEWMAT::ColumnVector giwc_test_vector(6);
+        giwc_test_vector << gravity.x << gravity.y << gravity.z
+                         << crossprod.x << crossprod.y << crossprod.z;
+
+        NEWMAT::ColumnVector result = giwc * giwc_test_vector;
+
+        balanced = true;
+        // Test to see if any item in the result is less than 0
+        // NOTE: 1-indexed
+        for (int i = 1; i <= result.Nrows(); i++) {
+            if (result(i) < 0) {
+                balanced = false;
+                break;
+            }
+        }
     }
-   
-    center.z = 0;
     solutionpath.push_back(center);
     //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
-    if(c)    
+    if(balanced)
     {
+        if (bPRINT)
+            RAVELOG_INFO("Balance check: Balanced \n");
         if(bDRAW)
             graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(center)[0]), 1, 0, 10, Vector(0,1,0) ));
         return true;
     }
     else
     {
+        if (bPRINT)
+            RAVELOG_INFO("Balance check: Not balanced \n");
         if(bDRAW)
             graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(center)[0]), 1, 0, 10, Vector(1,0,0) ));
         return false;
@@ -903,7 +981,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
         //if balance stuff is on, error will go up sometimes, so don't do this check
 
-        if(!bBalance && (x_error >= prev_error || (prev_error - x_error < epsilon/10))&& x_error > epsilon)
+        if(balance_mode == BALANCE_NONE && (x_error >= prev_error || (prev_error - x_error < epsilon/10))&& x_error > epsilon)
         {
             if(bPRINT)
             {
@@ -958,13 +1036,13 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             if(bLimit == false)
                 prev_error = x_error;
 
-            if(bBalance)
+            if(balance_mode != BALANCE_NONE)
             {
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
 
             //RAVELOG_INFO("xerror: %f\n",x_error);
-            if(x_error < epsilon && (!bBalance || CheckSupport(curcog)))
+            if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)))
             {
                 //if(bPRINT)
                 //    RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
@@ -984,7 +1062,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 }
 
 
-                if(bBalance)
+                if(balance_mode != BALANCE_NONE)
                 {
                    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
                    GetCOGJacobian(Transform(),Jtemp2,curcog);
@@ -1010,7 +1088,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 for(int k = 0; k < _numtargdims; k++)
                       J(k+1,badjointinds[j]+1) = 0;
 
-            if(bBalance)
+            if(balance_mode != BALANCE_NONE)
             {
                 for(int j = 0; j < badjointinds.size(); j++)
                     for(int k = 0; k <2; k++)

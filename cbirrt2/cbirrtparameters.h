@@ -53,6 +53,10 @@ public:
         _vXMLParameters.push_back("tattachedik_0");
         _vXMLParameters.push_back("supportpolyx");
         _vXMLParameters.push_back("supportpolyy");
+        _vXMLParameters.push_back("startsupportcone");
+        _vXMLParameters.push_back("pathsupportcone");
+        _vXMLParameters.push_back("endsupportcone");
+        _vXMLParameters.push_back("gravity");
         _vXMLParameters.push_back("ikguess");
         _vXMLParameters.push_back("bikfastsinglesolution");
         _vXMLParameters.push_back("pplannerstate");
@@ -73,6 +77,11 @@ public:
 
     std::vector<dReal> vsupportpolyx; ///< x coords of support polygon
     std::vector<dReal> vsupportpolyy; ///< y coords of support polygon
+
+    std::vector<dReal> vstartsupportcone; ///< row-major representation of the support cone matrix for the start pose
+    std::vector<dReal> vpathsupportcone; ///< row-major representation of the support cone matrix for the entire path
+    std::vector<dReal> vendsupportcone; ///< row-major representation of the support cone matrix for the end pose
+    std::vector<dReal> vgravity; ///< Gravity vector to use in support
 
     std::vector<TaskSpaceRegionChain> vTSRChains; ///< vector of Task-Space Region Chains
 
@@ -145,6 +154,26 @@ protected:
             O << vsupportpolyy[i]<< " ";
         O << "</supportpolyy>" << endl;
 
+        O << "<startsupportcone>";
+        for(int i = 0; i < vstartsupportcone.size(); i++)
+            O << vstartsupportcone[i] << " ";
+        O << "</startsupportcone>" << endl;
+
+        O << "<pathsupportcone>";
+        for(int i = 0; i < vpathsupportcone.size(); i++)
+            O << vpathsupportcone[i] << " ";
+        O << "</pathsupportcone>" << endl;
+
+        O << "<endsupportcone>";
+        for(int i = 0; i < vendsupportcone.size(); i++)
+            O << vendsupportcone[i] << " ";
+        O << "</endsupportcone>" << endl;
+
+        O << "<gravity>";
+        for(int i = 0; i < vgravity.size(); i++)
+            O << vgravity[i] << " ";
+        O << "</gravity>" << endl;
+
         O << "<ikguess>";
         for(int i = 0; i < vikguess.size(); i++)
             O << vikguess[i]<< " ";
@@ -183,6 +212,10 @@ protected:
                        name == "tattachedik_0" || 
                        name == "supportpolyx" || 
                        name == "supportpolyy" || 
+                       name == "startsupportcone" ||
+                       name == "pathsupportcone" ||
+                       name == "endsupportcone" ||
+                       name == "gravity" ||
                        name == "ikguess" ||
                        name == "bikfastsinglesolution" ||
                        name == "pplannerstate");
@@ -250,10 +283,58 @@ protected:
                 vsupportpolyy.clear();
                 dReal f;
                 while(1) {
-                    _ss >> f; 
+                    _ss >> f;
                     if( !_ss )
                         break; // at the end of the stream, so break
                     vsupportpolyy.push_back(f);
+                }
+
+            }
+            else if( stricmp(name.c_str(), "startsupportcone") == 0 )
+            {
+                vstartsupportcone.clear();
+                dReal f;
+                while(1) {
+                    _ss >> f;
+                    if( !_ss )
+                        break; // at the end of the stream, so break
+                    vstartsupportcone.push_back(f);
+                }
+
+            }
+            else if( stricmp(name.c_str(), "pathsupportcone") == 0 )
+            {
+                vpathsupportcone.clear();
+                dReal f;
+                while(1) {
+                    _ss >> f;
+                    if( !_ss )
+                        break; // at the end of the stream, so break
+                    vpathsupportcone.push_back(f);
+                }
+
+            }
+            else if( stricmp(name.c_str(), "endsupportcone") == 0 )
+            {
+                vendsupportcone.clear();
+                dReal f;
+                while(1) {
+                    _ss >> f;
+                    if( !_ss )
+                        break; // at the end of the stream, so break
+                    vendsupportcone.push_back(f);
+                }
+
+            }
+            else if( stricmp(name.c_str(), "gravity") == 0 )
+            {
+                vgravity.clear();
+                dReal f;
+                while(1) {
+                    _ss >> f;
+                    if( !_ss )
+                        break; // at the end of the stream, so break
+                    vgravity.push_back(f);
                 }
 
             }
