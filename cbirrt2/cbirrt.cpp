@@ -1804,8 +1804,32 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
         numtargets++;
     }
 
+    if (bAtRoot && root_giwc.Nrows() > 0) {
+        // At the root, do GIWC balancing in the IK solver
+        // This is necessary because the ability to provide a different stability requirement
+        // at the start/goal makes it possible for there to be a stable IK solution that can't be
+        // found in a reasonable amount of time with an uninformed solver
+        ikparams.push_back(2);
+        ikparams.push_back(gravity.x);
+        ikparams.push_back(gravity.y);
+        ikparams.push_back(gravity.z);
 
-    ikparams.push_back(0); //don't do any balancing inside the IK solver
+        ikparams.push_back(_planner->_parameters->vcogtarget[0]);
+        ikparams.push_back(_planner->_parameters->vcogtarget[1]);
+        ikparams.push_back(_planner->_parameters->vcogtarget[2]);
+
+        int rowsize = root_giwc.Nrows();
+        ikparams.push_back(rowsize);
+        ikparams.reserve(ikparams.size() + 6 * rowsize);
+        for (int r = 1; r <= rowsize; r++) {
+            for (int c = 1; c <= 6; c++) {
+                ikparams.push_back(root_giwc(r, c));
+            }
+        }
+    } else {
+        ikparams.push_back(0); //don't do any balancing inside the IK solver
+    }
+
     ikparams.push_back(0); //select the mode
     ikparams.push_back(0); //do rotation
     
@@ -1848,65 +1872,7 @@ bool CBirrtPlanner::MakeNext::ConstrainedNewConfig(std::vector<dReal>& q_s, std:
         }
         _planner->SetDOF(q_s);
 
-        bool checksupport = CheckSupport(bAtRoot);
-
-//        if (!has_graphed && root_giwc.Nrows() > 0) {
-//            has_graphed = true;
-//            RAVELOG_INFO("Graphing cones, path cone: %d, root cone: %d\n", path_giwc.Nrows(), root_giwc.Nrows());
-//            RAVELOG_INFO("Gravity: %f, %f, %f\n", gravity.x, gravity.y, gravity.z);
-////            graphptrs.clear();
-//            const float pathcolor[] = {0, 1, 0, 1};
-//            const float rootcolor[] = {0, 0, 1, 1};
-//            const float bothcolor[] = {0, 1, 1, 1};
-//            for (dReal x = -1.0; x < 1.0; x += 0.1) {
-//                for (dReal y = -1.0; y < 1.0; y += 0.1) {
-//                    for (dReal z = 0.0; z < 2.0; z += 0.1) {
-////                        RAVELOG_INFO("Testing %f, %f, %f\n", x, y, z);
-//                        Vector center(x, y, z, 1);
-//                        Vector crossprod = center.cross(gravity);
-
-//                        NEWMAT::ColumnVector giwc_test_vector(6);
-//                        giwc_test_vector << gravity.x << gravity.y << gravity.z
-//                                         << crossprod.x << crossprod.y << crossprod.z;
-
-////                        PrintMatrix(giwc_test_vector.Store(), 6, 1, "Test vector");
-
-//                        NEWMAT::ColumnVector result = path_giwc * giwc_test_vector;
-
-//                        bool supported = true;
-//                        // Test to see if any item in the result is less than 0
-//                        // NOTE: 1-indexed
-//                        for (int i = 1; i <= result.Nrows(); i++) {
-//                            if (result(i) < 0) {
-////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
-//                                supported = false;
-//                                break;
-//                            }
-//                        }
-
-//                        result = root_giwc * giwc_test_vector;
-//                        bool rootSupported = true;
-//                        for (int i = 1; i <= result.Nrows(); i++) {
-//                            if (result(i) < 0) {
-////                                RAVELOG_INFO("Not supported on cone row %d, result %f\n", i, result(i));
-//                                rootSupported = false;
-//                                break;
-//                            }
-//                        }
-
-//                        if (supported || rootSupported) {
-//                            float plot_center[3];
-//                            plot_center[0] = x; plot_center[1] = y; plot_center[2] = z;
-
-//                            const float* color = (supported && rootSupported) ? bothcolor : (supported ? pathcolor : rootcolor);
-//                            graphptrs.push_back(GetEnv()->plot3(plot_center, 1, 3, 5, color));
-//                        }
-//                    }
-//                }
-//            }
-//        }
-
-        return checksupport;
+        return CheckSupport(bAtRoot);
     }
     else
     {
@@ -1927,8 +1893,8 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
 //    RAVELOG_INFO("CheckSupport At root: %d\n", bAtRoot);
     bool bConeSupport;
     if (_planner->_parameters->vpathsupportcone.size() > 0 ||
-            _planner->_parameters->vendsupportcone.size() > 0 ||
-            _planner->_parameters->vstartsupportcone.size() > 0) {
+        _planner->_parameters->vendsupportcone.size() > 0 ||
+        _planner->_parameters->vstartsupportcone.size() > 0) {
         bConeSupport = true;
     } else if(_planner->_parameters->vsupportpolyx.size() > 0) {
         bConeSupport = false;
@@ -1990,11 +1956,11 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
         for (int i = 1; i <= result.Nrows(); i++) {
             if (result(i) < 0) {
                 supported = false;
+//                RAVELOG_INFO("Support failed on path giwc\n");
                 break;
             }
         }
 
-//        RAVELOG_INFO("Supported by path constraint: %d\n", supported);
 
         if (bAtRoot && supported) {
             NEWMAT::ColumnVector result = root_giwc * giwc_test_vector;
@@ -2005,11 +1971,11 @@ bool CBirrtPlanner::MakeNext::CheckSupport(bool bAtRoot, bool bDraw)
             for (int i = 1; i <= result.Nrows(); i++) {
                 if (result(i) < 0) {
                     supported = false;
+//                    RAVELOG_INFO("Support failed on root giwc\n");
                     break;
                 }
             }
 
-//            RAVELOG_INFO("Supported by root constraint: %d\n", supported);
         }
 
     }

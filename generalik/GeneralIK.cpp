@@ -206,6 +206,10 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         gravity.y = pFreeParameters[offset++];
         gravity.z = pFreeParameters[offset++];
 
+        cogtarg.x = pFreeParameters[offset++];
+        cogtarg.y = pFreeParameters[offset++];
+        cogtarg.z = pFreeParameters[offset++];
+
         int rowsize = (int) pFreeParameters[offset++];
 
         giwc.ReSize(rowsize, 6);
@@ -674,6 +678,9 @@ bool GeneralIK::CheckSupport(Vector center)
                 break;
             }
         }
+
+//        if (bDRAW)
+            graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(cogtarg)[0]), 1, 0, 10, Vector(0, 0, 1) ));
     }
     solutionpath.push_back(center);
     //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);

@@ -57,6 +57,7 @@ public:
         _vXMLParameters.push_back("pathsupportcone");
         _vXMLParameters.push_back("endsupportcone");
         _vXMLParameters.push_back("gravity");
+        _vXMLParameters.push_back("cogtarget");
         _vXMLParameters.push_back("ikguess");
         _vXMLParameters.push_back("bikfastsinglesolution");
         _vXMLParameters.push_back("pplannerstate");
@@ -82,6 +83,7 @@ public:
     std::vector<dReal> vpathsupportcone; ///< row-major representation of the support cone matrix for the entire path
     std::vector<dReal> vendsupportcone; ///< row-major representation of the support cone matrix for the end pose
     std::vector<dReal> vgravity; ///< Gravity vector to use in support
+    std::vector<dReal> vcogtarget; ///< COG target to be used for goal support
 
     std::vector<TaskSpaceRegionChain> vTSRChains; ///< vector of Task-Space Region Chains
 
@@ -174,6 +176,11 @@ protected:
             O << vgravity[i] << " ";
         O << "</gravity>" << endl;
 
+        O << "<cogtarget>";
+        for(int i = 0; i < vcogtarget.size(); i++)
+            O << vcogtarget[i] << " ";
+        O << "</cogtarget>" << endl;
+
         O << "<ikguess>";
         for(int i = 0; i < vikguess.size(); i++)
             O << vikguess[i]<< " ";
@@ -216,6 +223,7 @@ protected:
                        name == "pathsupportcone" ||
                        name == "endsupportcone" ||
                        name == "gravity" ||
+                       name == "cogtarget" ||
                        name == "ikguess" ||
                        name == "bikfastsinglesolution" ||
                        name == "pplannerstate");
@@ -335,6 +343,18 @@ protected:
                     if( !_ss )
                         break; // at the end of the stream, so break
                     vgravity.push_back(f);
+                }
+
+            }
+            else if( stricmp(name.c_str(), "cogtarget") == 0 )
+            {
+                vcogtarget.clear();
+                dReal f;
+                while(1) {
+                    _ss >> f;
+                    if( !_ss )
+                        break; // at the end of the stream, so break
+                    vcogtarget.push_back(f);
                 }
 
             }
