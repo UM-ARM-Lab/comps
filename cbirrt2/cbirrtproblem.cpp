@@ -353,6 +353,18 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         ikparams.push_back(gravity.x);
         ikparams.push_back(gravity.y);
         ikparams.push_back(gravity.z);
+
+        // Compute cogtarg as the mean position of the support links
+        for(int i = 0; i < support_manips.size(); i++) {
+            Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
+            cogtarg += tf.trans;
+        }
+        cogtarg /= support_manips.size();
+
+        ikparams.push_back(cogtarg.x);
+        ikparams.push_back(cogtarg.y);
+        ikparams.push_back(cogtarg.z);
+
         GetGIWC(support_manips, support_mus, ikparams);
     }
 
@@ -920,7 +932,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
             GetGIWC(curr_support_manips, curr_support_mus, params->vstartsupportcone);
         }
 
-        // End support
+        // Goal support
         curr_support_manips.clear();
         curr_support_mus.clear();
         for (int i = 0; i < support_manips.size(); i++) {
@@ -945,6 +957,22 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
         if (curr_support_manips.size() > 0) {
             GetGIWC(curr_support_manips, curr_support_mus, params->vpathsupportcone);
         }
+
+        // COG target (used for goal support)
+        Vector cogtarg;
+        int num_goal_manips = 0;
+        for(int i = 0; i < support_manips.size(); i++) {
+            if (support_modes[i] & 0b001) { // 0b001 == goal
+                Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
+                cogtarg += tf.trans;
+                num_goal_manips++;
+            }
+        }
+        cogtarg /= num_goal_manips;
+
+        params->vcogtarget.push_back(cogtarg.x);
+        params->vcogtarget.push_back(cogtarg.y);
+        params->vcogtarget.push_back(cogtarg.z);
     }
 
     params->vgravity.push_back(gravity.x);
@@ -1645,13 +1673,9 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
 
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm(manip_ids, mus);
 
-    graphptrs.clear();
-    draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
-
     dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
     giwc_span_cdd->representation = dd_Generator;
 
-    // TODO: Is there a better way than doing this?
     for (int r = 0; r < giwc_span.Nrows(); r++) {
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
         dd_set_si(giwc_span_cdd->matrix[r][0], 0);
