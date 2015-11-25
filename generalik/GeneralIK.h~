@@ -81,7 +81,7 @@ private:
     dReal TransformDifference(dReal * dx,Transform tm_ref, Transform tm_targ);
     void GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::Matrix& J);
     void GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector& center);
-    void GetOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, std::multimap<string,Vector>::iterator& control_point);
+    //void GetOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector& center);
     void PrintMatrix(dReal* pMatrix, int numrows, int numcols,const char * statement);
     void QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi);
     void ResizeMatrices();
@@ -90,8 +90,8 @@ private:
     void WriteTraj();
     void GetDistanceFromLineSegment(dReal cx, dReal cy, dReal ax, dReal ay,dReal bx, dReal by, dReal& distanceSegment,dReal& xout, dReal& yout);
     void GetClosestPointOnPolygon(Vector& point, Vector& closestpoint, Vector& perpvec);
-    void GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point);
-    // void ControlPointSampling(std::multimap<string,Vector>& control_points); deprecated
+    void GetRepulsiveVector(Vector& repulsive_vector, std::pair<string,Transform>& control_point);
+    void ControlPointSampling(std::multimap<string,Transform>& control_point)
     RobotBasePtr _pRobot;
     RobotBase::ManipulatorPtr  _pmanip;
     bool CheckDOFValueIntegrity(const std::vector<dReal>& q_in);
@@ -140,13 +140,10 @@ private:
     NEWMAT::ColumnVector dx_trans;
     NEWMAT::ColumnVector step;
     NEWMAT::ColumnVector nullspacestep;
-    NEWMAT::ColumnVector obstacleavoidancestep;
     NEWMAT::SymmetricMatrix M;
     NEWMAT::SymmetricMatrix Minv;
     NEWMAT::SymmetricMatrix Mbal;
     NEWMAT::SymmetricMatrix Mbalinv;
-    NEWMAT::SymmetricMatrix Moa;
-    NEWMAT::SymmetricMatrix Moainv;
     NEWMAT::SymmetricMatrix Mbalperp;
     NEWMAT::SymmetricMatrix Mbalperpinv;
 
@@ -212,10 +209,9 @@ private:
     NEWMAT::Matrix _V;
 
     //used in obstacle avoidance
-    EnvironmentBasePtr _pEnvironment;
     std::vector<KinBodyPtr> _pObstacle;
-    std::multimap<string,Vector> control_points; //<link_name,local translation>
-    std::vector<std::pair<string,string> > self_collision_checking_pairs; //need another reading command from user input
+    std::multimap<string,Transform> control_points; //<link_name,local transform>
+    
     
 
     bool _SolveStopAtLimits(std::vector<dReal>& q_s);

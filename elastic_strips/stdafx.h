@@ -171,6 +171,7 @@ inline std::wstring _ravembstowcs(const char* pstr)
 
 #include <rave/rave.h>
 #include <openrave/planningutils.h>
+#include <openrave/plugin.h>
 
 using namespace OpenRAVE;
 extern "C"
@@ -207,10 +208,10 @@ enum PlannerState
 };
 
 
-#include "TaskSpaceRegion.h"
-#include "cbirrtparameters.h"
-#include "cbirrtproblem.h"
-#include "cbirrt.h"
+#include "ElasticStrips.h"
+#include "ElasticStripsParameters.h"
+#include "Balance.h"
+
 
 class DoubleVectorToFloatVector : public vector<float> {
     public:

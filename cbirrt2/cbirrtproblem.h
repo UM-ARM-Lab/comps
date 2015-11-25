@@ -70,6 +70,9 @@ private:
     /// call the cbirrt planner
     int RunCBirrt(ostream& sout, istream& sinput);
 
+    /// call the cbirrt planner
+    int RunElasticStrips(ostream& sout, istream& sinput);
+
     /// check if robot is in self-collision
     int CheckSelfCollision(ostream& sout, istream& sinput);
 

@@ -285,9 +285,10 @@ class CBiRRT(object):
         else:
             return cbirrt_result.lstrip("1 ")
 
+
     def DoGeneralIK(self, execute=None, gettime=None, norot=None, returnclosest=None, robottm=None, maniptm=None,
-                    movecog=None, supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None,
-                    printcommand=False):
+                    checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, movecog=None,
+                    supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, printcommand=False):
         """
         Get an IK solution with GeneralIK. In addition to these parameters, you can specify which DOF GeneralIK will
         use when planning by changing the active DOF
@@ -309,6 +310,7 @@ class CBiRRT(object):
                     the robot balanced.
         :param list[float] movecog: The desired center of gravity of the robot as an [x, y, z] list. Support polygon
                     stability will not be performed if this parameter is not provided (optional)
+        :param list[str] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver
         :param list[string|rave.KinBody.Link] supportlinks: Links to use to calculate the robot's support polygon,
                     specified either as the link name or link object. Setting this parameter enables balance checking
                     using the robot's support polygon. (optional)
@@ -357,6 +359,187 @@ class CBiRRT(object):
                 cmd.append("maniptm")
                 cmd.append(self.manip_indices[manip])
                 cmd.append(SerializeTransform(tm))
+
+        if checkcollisionlink is not None:
+            cmd.append("checkcollision")
+            cmd.append(len(checkcollisionlink))
+            cmd.extend(rave_object_name(l) for l in checkcollisionlink)
+
+        if selfcollisionlinkpair is not None:
+            cmd.append("checkselfcollision")
+            cmd.append(len(selfcollisionlinkpair))
+            for l in selfcollisionlinkpair:
+                cmd.extend([l[0],l[1]])
+
+        if obstacles is not None:
+            cmd.append("obstacles")
+            cmd.append(len(obstacles))
+            cmd.extend(rave_object_name(l) for l in obstacles)
+
+        if movecog is not None:
+            cmd.append("movecog")
+            # Enumerating manually to ensure you can pass in any indexable object and get a movecog vector of 3 items
+            cmd.append(movecog[0])
+            cmd.append(movecog[1])
+            cmd.append(movecog[2])
+
+        if supportlinks is not None and support is not None:
+            rave.raveLogWarn("Supportlinks and support should be mutually exclusive")
+
+        if supportlinks is not None:
+            cmd.append("supportlinks")
+            cmd.append(len(supportlinks))
+            cmd.extend(rave_object_name(l) for l in supportlinks)
+
+        if polyscale is not None:
+            if supportlinks is None:
+                rave.raveLogWarn("Polyscale has no effect when supportlinks is not provided")
+            cmd.append("polyscale")
+            cmd.extend(polyscale)
+            if len(polyscale) == 2:
+                cmd.append(0)
+            elif len(polyscale) != 3:
+                raise ValueError("Polyscale must have either 2 or 3 values")
+
+        if polytrans is not None:
+            if supportlinks is None:
+                rave.raveLogWarn("Polytrans has no effect when supportlinks is not provided")
+            cmd.append("polytrans")
+            cmd.extend(polytrans)
+            if len(polytrans) == 2:
+                cmd.append(0)
+            elif len(polytrans) != 3:
+                raise ValueError("Polytrans must have either 2 or 3 values")
+
+        if support is not None:
+            for manip, mu in support:
+                cmd.append("support {} {}".format(rave_object_name(manip), mu))
+
+        if gravity is not None:
+            cmd.append("gravity")
+            # Enumerating manually to ensure you can pass in any indexable object and get a gravity vector of 3 items
+            cmd.append(gravity[0])
+            cmd.append(gravity[1])
+            cmd.append(gravity[2])
+
+        cmd_str = " ".join(str(item) for item in cmd)
+
+        if printcommand:
+            print(cmd_str)
+
+        result_str = self.problem.SendCommand(cmd_str)
+        result = [float(x) for x in result_str.split()]
+
+        if gettime:
+            # Convert the time from ms to seconds to match what is expected in Python
+            time = result.pop() / 1000.0
+
+            if not result:
+                return time, None
+            else:
+                return time, result
+        else:
+            if not result:
+                return None
+            else:
+                return result
+
+
+    def RunElasticStrips(self, manips=None, trajectory=None, gettime=None, desiredmanippose=None, checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, posturecontrol=None, movecog=None,
+                    supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, printcommand=False):
+        """
+        Get an IK solution with GeneralIK. In addition to these parameters, you can specify which DOF GeneralIK will
+        use when planning by changing the active DOF
+
+        :param bool execute: If True, GeneralIK will set the robot's configuration to the IK solution it found
+                    (optional, defaults to False)
+        :param bool gettime: If True, this function will return a 2-tuple of the result and the time in seconds that was
+                    spent in the IK solver (optional, defaults to False)
+        :param bool norot: If True, GeneralIK will ignore the rotation components of the goal transforms (optional,
+                    defaults to False)
+        :param bool returnclosest: If True, on failure GeneralIK will return the closest configuration it was able to
+                    achieve. If this is True there is no feedback about whether the solver succeeded. (optional,
+                    defaults to False)
+        :param numpy.array robottm: Transform matrix representing the desired position and orientation of the base link
+                    relative to the world frame (optional)
+        :param list[(str|rave.Manipulator, numpy.array)] maniptm: List of tuples specifying a manipulator, by name
+                    or Manipulator object, and its desired transform relative to the world frame. Any manipulator that
+                    does not appear in this list but is in the active DOF list may be moved to avoid obstacles or keep
+                    the robot balanced.
+        :param list[float] movecog: The desired center of gravity of the robot as an [x, y, z] list. Support polygon
+                    stability will not be performed if this parameter is not provided (optional)
+        :param list[str] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver
+        :param list[string|rave.KinBody.Link] supportlinks: Links to use to calculate the robot's support polygon,
+                    specified either as the link name or link object. Setting this parameter enables balance checking
+                    using the robot's support polygon. (optional)
+        :param list[float] polyscale: [x, y, z] values that scale the support polygon. Z is ignored and may be ommitted.
+                    (optional, defaults to [1, 1, 1])
+        :param list[float] polytrans: [x, y, z] values that translate the support polygon. Z is ignored and may be
+                    ommitted. (optional, defaults to [0, 0, 0])
+        :param list[(str|rave.Manipulator, float)] support: Manipulators to use when calculating support using the
+                    GIWC (Gravito-Inertial Wrench Cone). Each should be specified as a 2-tuple of the Manipulator object
+                    or manipulator's name and the coefficient of friction to use for that manipulator. Specifying this
+                    parameter enables GIWC support checking, and it should not be specified with the supportlinks
+                    parameter.
+        :param list[float] gravity: The [x, y, z] gravity vector to use when calculating support using GIWC (optional,
+                    defaults to [0, 0, -9.8])
+        :param bool printcommand: If this True, prints the resulting command string immediately before calling
+                    GeneralIK, meant for debuggging (optional, defaults to False)
+        :return list[float]|None|(list[float]|None, float): If gettime is False, the solution of the IK solver as a list
+                    of joint angles, in the order specified by the active DOF list, or None if no solution was found.
+                    If gettime is True, a 2-tuple of the solution or None and the time spent in the planner, measured
+                    in seconds.
+        """
+        cmd = ["RunElasticStrips"]
+        """:type : list[int | float | str]"""
+
+        if manips is not None:
+            cmd.append("nummanips")
+            cmd.append(len(manips))
+
+            for m in manips:
+                cmd.append(self.manip_indices[m])
+
+        if trajectory is not None:
+            cmd.append("trajectory")
+            cmd.append(len(trajectory))
+            for index, tm in trajectory:
+                cmd.append(index)
+                cmd.append(SerializeTransform(tm))
+
+        if gettime is not None:
+            cmd.append("gettime")
+
+        if desiredmanippose is not None:
+            for poses in desiredmanippose:
+                cmd.append("desiredmanippose")
+                cmd.append(len(poses))
+                for p,tm in poses:
+                    cmd.append(p)
+                    cmd.append(SerializeTransform(tm))
+
+        if checkcollisionlink is not None:
+            cmd.append("checkcollision")
+            cmd.append(len(checkcollisionlink))
+            cmd.extend(rave_object_name(l) for l in checkcollisionlink)
+
+        if selfcollisionlinkpair is not None:
+            cmd.append("checkselfcollision")
+            cmd.append(len(selfcollisionlinkpair))
+            for l in selfcollisionlinkpair:
+                cmd.extend([l[0],l[1]])
+
+        if obstacles is not None:
+            cmd.append("obstacles")
+            cmd.append(len(obstacles))
+            cmd.extend(rave_object_name(l) for l in obstacles)
+
+        if posturecontrol is not None:
+            cmd.append("posturecontrol")
+            cmd.append(len(posturecontrol))
+            for link,tm in posturecontrol:
+                    cmd.append(link)
+                    cmd.append(SerializeTransform(tm))
 
         if movecog is not None:
             cmd.append("movecog")

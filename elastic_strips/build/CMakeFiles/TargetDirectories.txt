@@ -1,0 +1,1 @@
+/home/yu-chi/flor_repo/catkin_ws/src/yuchi_ws/elastic_strips/build/CMakeFiles/elastic_strips.dir

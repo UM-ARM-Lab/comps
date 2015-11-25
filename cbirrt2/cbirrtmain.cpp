@@ -52,6 +52,7 @@ InterfaceBasePtr CreateInterfaceValidated(InterfaceType type, const std::string&
     else if( type == PT_Planner && interfacename == "cbirrt" ) {
         return InterfaceBasePtr(new CBirrtPlanner(penv));
     }
+
     return InterfaceBasePtr();
 }
 

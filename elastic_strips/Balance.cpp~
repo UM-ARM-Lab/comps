@@ -1,0 +1,360 @@
+
+#include "stdafx.h"
+
+
+NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm(std::vector<std::string>& manip_ids, std::vector<dReal>& friction_coeffs)
+{
+    int num_manips = manip_ids.size();
+    std::vector<NEWMAT::Matrix> matrices;
+    int total_rows = 0;
+
+    for (int i = 0; i < num_manips; i++) {
+        matrices.push_back(GetSurfaceCone(manip_ids[i], friction_coeffs[i]));
+        total_rows += matrices.back().Nrows();
+    }
+
+    // Calculate combined surface cone matrix
+    NEWMAT::Matrix s_cones_diagonal(total_rows, 6*num_manips);
+    s_cones_diagonal = 0.0;
+
+    int current_row_offset = 0;
+    for (int i = 0; i < num_manips; i++) {
+        s_cones_diagonal.SubMatrix(current_row_offset+1, current_row_offset+matrices[i].Nrows(), (6*i)+1, (6*i)+6) = matrices[i];
+        current_row_offset += matrices[i].Nrows();
+    }
+
+    // Calculate A_stance matrix
+    NEWMAT::Matrix a_stance_stacked(6 * num_manips, 6);
+
+    for (int i = 0; i < num_manips; i++) {
+        GetAStance(robot->GetManipulator(manip_ids[i])->GetTransform(), &a_stance_stacked, 6*i);
+    }
+
+    NEWMAT::Matrix mat = s_cones_diagonal * a_stance_stacked; // Dot product
+
+    mat.Release();
+    return mat;
+}
+
+void Balance::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dReal>& mus, std::vector<dReal>& ikparams)
+{
+    dd_set_global_constants();
+    dd_ErrorType err;
+
+    NEWMAT::Matrix giwc_span = GetGIWCSpanForm(manip_ids, mus);
+
+    graphptrs.clear();
+    draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
+
+    dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
+    giwc_span_cdd->representation = dd_Generator;
+
+    // TODO: Is there a better way than doing this?
+    for (int r = 0; r < giwc_span.Nrows(); r++) {
+        // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
+        dd_set_si(giwc_span_cdd->matrix[r][0], 0);
+        for (int c = 0; c < giwc_span.Ncols(); c++) {
+            // It's legal to multiply an entire row by the same value (here 1e4)
+            // This rounds everything down to a fixed precision int
+            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
+        }
+    }
+
+    dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
+    if (err != dd_NoError) {
+        RAVELOG_INFO("CDD Error: ");
+        dd_WriteErrorMessages(stdout, err);
+        throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
+    }
+
+    dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
+
+    // Add to ikparams
+    ikparams.push_back(giwc_face_cdd->rowsize);
+
+    for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
+        // Note this skips element 0 of each row, which should always be 0
+        for (int col = 1; col < giwc_face_cdd->colsize; col++) {
+            ikparams.push_back(dd_get_d(giwc_face_cdd->matrix[row][col]));
+        }
+    }
+
+    dd_FreeMatrix(giwc_face_cdd);
+    dd_FreeMatrix(giwc_span_cdd);
+    dd_FreePolyhedra(poly);
+    dd_free_global_constants();
+}
+
+void Balance::GetSupportPolygon(std::vector<string>& supportlinks, std::vector<dReal>& polyx, std::vector<dReal>& polyy, Vector polyscale, Vector polytrans)
+{
+    int numsupportlinks = supportlinks.size();
+
+    std::vector<boost::shared_ptr<KinBody::Link::Geometry> >_listGeomProperties;
+    std::vector<Vector> points;
+    AABB bounds;
+    //get points on trimeshes of support links
+    vector<KinBody::LinkPtr> vlinks = robot->GetLinks();
+    for(int i = 0 ; i < numsupportlinks; i++)
+    {
+        for(int j =0; j < vlinks.size(); j++)
+        {
+            if(strcmp(supportlinks[i].c_str(), vlinks[j]->GetName().c_str()) == 0 )
+            {
+                RAVELOG_DEBUG("Found match!\n");
+                _listGeomProperties = vlinks[j]->GetGeometries();
+
+                //compute AABBs for the link at identity
+                for(int k = 0; k < _listGeomProperties.size(); k++)
+                {
+                    //if( _listGeomProperties.size() == 1){
+                    Transform _t = _listGeomProperties[k]->GetTransform().inverse();
+                    //bounds = _listGeomProperties[k]->ComputeAABB(_t);
+                    bounds = _listGeomProperties[k]->ComputeAABB(_listGeomProperties[k]->GetTransform());
+                    Transform offset = vlinks[j]->GetTransform()*_t;
+                    points.push_back(offset*Vector(bounds.pos.x + bounds.extents.x,bounds.pos.y + bounds.extents.y,bounds.pos.z - bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x - bounds.extents.x,bounds.pos.y + bounds.extents.y,bounds.pos.z - bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x - bounds.extents.x,bounds.pos.y - bounds.extents.y,bounds.pos.z - bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x + bounds.extents.x,bounds.pos.y - bounds.extents.y,bounds.pos.z - bounds.extents.z));
+                    
+                    points.push_back(offset*Vector(bounds.pos.x + bounds.extents.x,bounds.pos.y + bounds.extents.y,bounds.pos.z + bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x - bounds.extents.x,bounds.pos.y + bounds.extents.y,bounds.pos.z + bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x - bounds.extents.x,bounds.pos.y - bounds.extents.y,bounds.pos.z + bounds.extents.z));
+                    points.push_back(offset*Vector(bounds.pos.x + bounds.extents.x,bounds.pos.y - bounds.extents.y,bounds.pos.z + bounds.extents.z));
+                }
+                break;
+            }
+        }
+    }
+    RAVELOG_INFO("Num support points in to qhull: %d\n",points.size());
+    std::vector<coordT> pointsin(points.size()*2);
+    std::vector<RaveVector<float> > plotvecs(points.size());
+    for(int i = 0; i < points.size();i++)
+    {
+        pointsin[i*2 + 0] = points[i].x;
+        pointsin[i*2 + 1] = points[i].y;
+        plotvecs[i] = RaveVector<float>(points[i].x,points[i].y,points[i].z);
+    }
+    //GraphHandlePtr graphptr1 = GetEnv()->plot3(&plotvecs[0].x,plotvecs.size(),sizeof(plotvecs[0]),5, RaveVector<float>(1,0, 0, 1));
+    //graphptrs.push_back(graphptr1);
+
+    coordT* pointsOut = NULL;
+
+    int numPointsOut = 0;
+
+    convexHull2D(&pointsin[0], points.size(), &pointsOut, &numPointsOut);
+    RAVELOG_INFO("Num support points out of qhull:: %d\n",numPointsOut);
+    
+    std::vector<RaveVector<float> > tempvecs(numPointsOut +1);
+    polyx.resize(numPointsOut);
+    polyy.resize(numPointsOut);
+
+    Point2D polygon[numPointsOut];
+    dReal centerx = 0;
+    dReal centery = 0;
+    for(int i =0; i < numPointsOut; i++)
+    {
+        polyx[i] = pointsOut[(i)*2 + 0];
+        polyy[i] = pointsOut[(i)*2 + 1];
+        polygon[i].x = polyx[i];
+        polygon[i].y = polyy[i];
+        //centerx += polyx[i];
+        //centery += polyy[i];
+    }
+
+    size_t vertexCount = sizeof(polygon) / sizeof(polygon[0]);
+    Point2D centroid = compute2DPolygonCentroid(polygon, vertexCount);
+    //std::cout << "Centroid is (" << centroid.x << ", " << centroid.y << ")\n";
+
+
+    centerx = centroid.x;//centerx/numPointsOut;
+    centery = centroid.y;//centery/numPointsOut;
+    //RAVELOG_INFO("center %f %f\n",centerx, centery);
+
+    for(int i =0; i < numPointsOut; i++)
+    {
+        polyx[i] = polyscale.x*(polyx[i] - centerx) + centerx + polytrans.x;
+        polyy[i] = polyscale.y*(polyy[i] - centery) + centery + polytrans.y;
+        tempvecs[i] = RaveVector<float>(polyx[i],polyy[i],0);
+    }
+
+    
+
+    //close the polygon
+    tempvecs[tempvecs.size()-1] = RaveVector<float>(polyx[0],polyy[0],0);
+    GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
+    graphptrs.push_back(graphptr);
+
+
+    free(pointsOut);
+}
+
+bool Balance::Init()
+{
+    if(balance_mode == 1)
+    {
+        if(supportlinks.size() == 0)
+        {
+            RAVELOG_INFO("ERROR: Must specify support links to do balancing\n");
+            return false;
+        }
+
+        GetSupportPolygon(supportlinks, supportpolyx, supportpolyy, polyscale, polytrans);
+
+        ikparams.push_back(supportpolyx.size());
+
+        for(int i = 0 ; i < supportpolyx.size(); i ++)
+            ikparams.push_back(supportpolyx[i]);
+
+        for(int i = 0 ; i < supportpolyy.size(); i ++)
+            ikparams.push_back(supportpolyy[i]);
+    }
+    else if (balance_mode == 2)
+    {
+        ikparams.push_back(gravity.x);
+        ikparams.push_back(gravity.y);
+        ikparams.push_back(gravity.z);
+
+        // Compute cogtarg as the mean position of the support links
+        if( !bCOG )
+        {
+            for(int i = 0; i < support_manips.size(); i++) {
+                Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
+                cogtarg += tf.trans;
+            }
+            cogtarg /= support_manips.size();
+        }
+
+        GetGIWC(support_manips, support_mus, ikparams);
+    }
+
+    //*************//
+
+    int support_mode = (int) pFreeParameters[offset++];
+    if(support_mode == 1)
+    {
+        if (bPRINT)
+            RAVELOG_INFO("Support mode: Support polygon \n");
+
+    
+        if(bPRINT)
+            RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
+
+        //read in the support polygon
+        int numpoints = pFreeParameters[offset++];
+        //int offset = numtargets*8 + 6;
+
+        _vsupportpolyx.resize(numpoints);
+        _vsupportpolyy.resize(numpoints);
+        for(int i = 0; i < numpoints; i++)
+        {
+            _vsupportpolyx[i] = pFreeParameters[offset++];
+        }
+
+        //offset = numtargets*8 + 6 + numpoints;
+
+        for(int i = 0; i < numpoints; i++)
+        {
+            _vsupportpolyy[i] = pFreeParameters[offset++];
+        }
+
+
+        for(int i = 0; i < _vsupportpolyy.size(); i++)
+        {
+            if(bPRINT)
+                RAVELOG_INFO("x: %f    y:%f\n",_vsupportpolyx[i],_vsupportpolyy[i]);
+        }
+
+        balance_mode = BALANCE_SUPPORT_POLYGON;
+    }
+    else if (support_mode == 2) {
+        if (bPRINT)
+            RAVELOG_INFO("Support mode: Gravito-Inertial Wrench Cone\n");
+
+        gravity.x = pFreeParameters[offset++];
+        gravity.y = pFreeParameters[offset++];
+        gravity.z = pFreeParameters[offset++];
+
+
+        int rowsize = (int) pFreeParameters[offset++];
+
+        giwc.ReSize(rowsize, 6);
+        // NOTE: 1-indexed
+        for (int r = 1; r <= rowsize; r++) {
+            for (int c = 1; c <= 6; c++) {
+                giwc(r, c) = pFreeParameters[offset++];
+            }
+        }
+
+        balance_mode = BALANCE_GIWC;
+    }
+    else
+    {
+        balance_mode = BALANCE_NONE;
+    }
+
+}
+
+bool Balance::CheckSupport(Vector center)
+{
+    bool balanced = false;
+    if (balance_mode == BALANCE_SUPPORT_POLYGON) {
+        int nvert = _vsupportpolyx.size();
+        if(nvert == 0)
+            return false;
+
+
+        dReal testx = center.x;
+        dReal testy = center.y;
+        dReal * vertx = &_vsupportpolyx[0];
+        dReal * verty = &_vsupportpolyy[0];
+
+
+        int i, j;
+        for (i = 0, j = nvert-1; i < nvert; j = i++) {
+        if ( ((verty[i]>testy) != (verty[j]>testy)) &&
+         (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
+           balanced = !balanced;
+        }
+
+        center.z = 0;
+    } else if (balance_mode == BALANCE_GIWC) {
+        Vector crossprod = center.cross(gravity);
+
+        NEWMAT::ColumnVector giwc_test_vector(6);
+        giwc_test_vector << gravity.x << gravity.y << gravity.z
+                         << crossprod.x << crossprod.y << crossprod.z;
+
+        NEWMAT::ColumnVector result = giwc * giwc_test_vector;
+
+        balanced = true;
+        // Test to see if any item in the result is less than 0
+        // NOTE: 1-indexed
+        for (int i = 1; i <= result.Nrows(); i++) {
+            if (result(i) < 0) {
+                balanced = false;
+                break;
+            }
+        }
+
+//      if (bDRAW)
+        graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(cogtarg)[0]), 1, 0, 10, Vector(0, 0, 1) ));
+    }
+    solutionpath.push_back(center);
+    //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
+    if(balanced)
+    {
+        if (bPRINT)
+            RAVELOG_INFO("Balance check: Balanced \n");
+        if(bDRAW)
+            graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(center)[0]), 1, 0, 10, Vector(0,1,0) ));
+        return true;
+    }
+    else
+    {
+        if (bPRINT)
+            RAVELOG_INFO("Balance check: Not balanced \n");
+        if(bDRAW)
+            graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(center)[0]), 1, 0, 10, Vector(1,0,0) ));
+        return false;
+    }
+}

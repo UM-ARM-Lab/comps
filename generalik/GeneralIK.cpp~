@@ -40,7 +40,10 @@ GeneralIK::GeneralIK(EnvironmentBasePtr penv) : IkSolverBase(penv)
 {
     __description = ":Interface Author: Dmitry Berenson\nAn iterative IK solver for kinematic chains. Can also take into account balance constraints. \n\n`C++ Documentation <http://automation.berkeley.edu/~berenson/docs/generalik/index.html>`_";
 
-    _pEnvironment = penv;
+    std::vector<KinBodyPtr>::iterator itbody;
+    std::vector<KinBodyPtr> bodies;
+    penv->GetBodies(bodies);
+    _pObstacle = bodies;
 }
 
 
@@ -49,10 +52,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _pmanip = pmanip;
     _pRobot = _pmanip->GetRobot();
 
-    std::vector<KinBodyPtr> bodies;
-    _pEnvironment->GetBodies(bodies);
-    _pObstacle = bodies;
-    
+
     bPRINT = false;
     bDRAW = false;
     bWRITETRAJ = false;
@@ -102,7 +102,6 @@ void GeneralIK::ResizeMatrices()
     dx_trans.ReSize(_numtransdims);
     step.ReSize(_numdofs);
     nullspacestep.ReSize(_numdofs);
-    obstacleavoidancestep.ReSize(_numdofs);
 
     M.ReSize(_numtargdims);
     Minv.ReSize(_numtargdims);
@@ -118,7 +117,6 @@ void GeneralIK::ResizeMatrices()
     q_limits.ReSize(_numdofs);
 
     Jtemp2.ReSize(2,_numdofs);
-    Jtemp3.ReSize(3,_numdofs);
 
     _Jr_quat.ReSize(4,_numdofs);
 
@@ -129,6 +127,7 @@ void GeneralIK::ResizeMatrices()
 
 bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>& q0, const std::vector<dReal>& vFreeParameters, int filteroptions, boost::shared_ptr< std::vector<dReal> > result)
 {
+
     RobotBase::ManipulatorConstPtr activemanip_p = _pRobot->GetActiveManipulator();
 
     dReal* qResult = &(*result.get())[0];
@@ -169,32 +168,14 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     bOBSTACLE_AVOIDANCE = (bool) pFreeParameters[offset++];
     if(bOBSTACLE_AVOIDANCE)
     {
-        int checkcollisionlink_number = (int) pFreeParameters[offset++];
-        for(int i  = 0; i < checkcollisionlink_number; i++)
-        {
-            int link_index = (int) pFreeParameters[offset++];
-            KinBody::LinkPtr link = _pRobot->GetLinks()[link_index];
-            control_points.insert(std::pair<string,Vector>(link->GetName(),link->GetCOMOffset()));
-        }
-
-        int checkselfcollisionlinkpair_number = (int) pFreeParameters[offset++];
-        for(int i  = 0; i < checkselfcollisionlinkpair_number; i++)
-        {
-            int link_index_1 = (int) pFreeParameters[offset++];
-            int link_index_2 = (int) pFreeParameters[offset++];
-            KinBody::LinkPtr link_1 = _pRobot->GetLinks()[link_index_1];
-            KinBody::LinkPtr link_2 = _pRobot->GetLinks()[link_index_2];
-            self_collision_checking_pairs.push_back(std::pair<string,string>(link_1->GetName(),link_2->GetName()));
-        }        
-
-        int obstacle_number = (int) pFreeParameters[offset++];
-        std::vector<KinBodyPtr> tempobstacle;
-        for(int i = 0; i < obstacle_number; i++)
-        {
-            int obstacle_index = (int) pFreeParameters[offset++];
-            tempobstacle.push_back(_pObstacle[obstacle_index]);
-        }
-        _pObstacle = tempobstacle;
+	int obstacle_number = (int) pFreeParameters[offset++];
+	std::vector<KinBodyPtr> tempobstacle;
+	for(int i = 0; i < obstacle_number; i++)
+	{
+	    int obstacle_index = (int) pFreeParameters[offset++];
+	    tempobstacle.push_back(_pObstacle[obstacle_index]);
+	}
+	_pObstacle = tempobstacle;
     }
 
     //read in cog target if there is one
@@ -208,8 +189,8 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
     
-        if(bPRINT)
-            RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
+        //if(bPRINT)
+        RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
 
         //read in the support polygon
         int numpoints = pFreeParameters[offset++];
@@ -229,8 +210,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
             _vsupportpolyy[i] = pFreeParameters[offset++];
         }
 
-
-        for(int i = 0; i < _vsupportpolyy.size(); i++)
+        for(int i =0; i < _vsupportpolyy.size(); i++)
         {
             if(bPRINT)
                 RAVELOG_INFO("x: %f    y:%f\n",_vsupportpolyx[i],_vsupportpolyy[i]);
@@ -304,6 +284,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         movementlimit = pFreeParameters[offset];
     }
 
+
     if(bTRANSLATION_ONLY)
     {
         _dimspergoal = 3;
@@ -352,8 +333,10 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         return false;
     }
 
+
     bsuccess  = _SolveStopAtLimits(q_s);
 
+    
     //always copy the joint vals into q_s (this could be the closest the robot could get)
     *result.get() = q_s;
 
@@ -589,34 +572,6 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
 
 }
 
-void GeneralIK::GetOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, std::multimap<string,Vector>::iterator& control_point)
-{
-
-    //calculate the velocity of each control point
-    //calculate jacobian for each control point to generate the joint angular velocity
-    //sum the joint angular velocity
-
-    //center = Vector(0,0,0,0);
-    dReal fTotalMass = 0;
-    //std::vector<KinBody::LinkPtr>::const_iterator itlink;
-    
-
-    _TMtask = TransformMatrix(taskframe_in.inverse());
-    _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-    _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-    _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
-
-    KinBody::LinkPtr target_link = _pRobot->GetLink(control_point->first);
-    std::vector<dReal> temp;
-
-    _pRobot->CalculateActiveJacobian(target_link->GetIndex(), (target_link->GetTransform() * control_point->second), temp);
-    memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
-
-    _Jp = _tasktm * _Jp0;
-
-    J = _Jp;
-}
-
 
 
 void GeneralIK::PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement)
@@ -770,31 +725,31 @@ bool GeneralIK::CheckSupport(Vector center)
 int GeneralIK::invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed)
 {
     int didfix = 0;
-    NEWMAT::EigenValues(A,_S,_V);
-    // Find the maximum eigenvalue
-    dReal maxEig = 0;
+	NEWMAT::EigenValues(A,_S,_V);
+	// Find the maximum eigenvalue
+	dReal maxEig = 0;
     dReal minEig = 0;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
-        if (e > maxEig) maxEig = e;
+	for (int i = 1; i <= _S.Nrows(); ++i){
+		dReal e = _S(i);
+		if (e > maxEig) maxEig = e;
         if (i == 1 || e < minEig) minEig = e;
-    }
+	}
     //RAVELOG_INFO("min/max eigenvalue: %f/%f\n", minEig, maxEig);
 
-    dReal minEigDesired = maxEig/maxConditionNumber;
+	dReal minEigDesired = maxEig/maxConditionNumber;
     int notfixcount = 0;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
-        if (e < minEigDesired) {e = minEigDesired; didfix = 1; if(bPRINT) RAVELOG_INFO("MIN EIG COND FIX!\n");}
+	for (int i = 1; i <= _S.Nrows(); ++i){
+		dReal e = _S(i);
+		if (e < minEigDesired) {e = minEigDesired; didfix = 1; if(bPRINT) RAVELOG_INFO("MIN EIG COND FIX!\n");}
         else
             notfixcount++;
             
         if (maxEig > 100) { e = e/maxEig*100; if(bPRINT) RAVELOG_INFO("MAX EIG COND FIX!\n");}
         _S(i) = e;
-    }
+	}
     if(bPRINT) RAVELOG_INFO("notfixcount: %d\n",notfixcount);
     //this just reconstructs the A matrix with better conditioning
-    //Afixed << _V * _S * _V.t();
+	//Afixed << _V * _S * _V.t();
     
 
     //this will do the inversion 
@@ -805,25 +760,25 @@ int GeneralIK::invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricM
 void GeneralIK::invConditioning(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed)
 {
 
-    NEWMAT::EigenValues(A,_S,_V);
-    // Find the maximum eigenvalue
-    dReal maxEig = 0;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
-        if (e > maxEig) maxEig = e;
-    }
+	NEWMAT::EigenValues(A,_S,_V);
+	// Find the maximum eigenvalue
+	dReal maxEig = 0;
+	for (int i = 1; i <= _S.Nrows(); ++i){
+		dReal e = _S(i);
+		if (e > maxEig) maxEig = e;
+	}
     //RAVELOG_INFO("max eigenvalue: %f\n", maxEig);
 
-    dReal minEigDesired = maxEig/maxConditionNumber;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
-        if (e < minEigDesired) e = minEigDesired;
+	dReal minEigDesired = maxEig/maxConditionNumber;
+	for (int i = 1; i <= _S.Nrows(); ++i){
+		dReal e = _S(i);
+		if (e < minEigDesired) e = minEigDesired;
         //if (maxEig > 100) e = e/maxEig*100;
         _S(i) = e;
-    }
+	}
 
     //this just reconstructs the A matrix with better conditioning
-    //Afixed << _V * _S * _V.t();
+	//Afixed << _V * _S * _V.t();
     
 
     //this will do the inversion 
@@ -896,49 +851,49 @@ void GeneralIK::GetClosestPointOnPolygon(Vector& point,Vector& closestpoint, Vec
 
 
 void GeneralIK::GetDistanceFromLineSegment(dReal cx, dReal cy, dReal ax, dReal ay ,
-                      dReal bx, dReal by, dReal& distanceSegment,
-                      dReal& xout, dReal& yout)
+					  dReal bx, dReal by, dReal& distanceSegment,
+					  dReal& xout, dReal& yout)
 {
     dReal distanceLine;
 
-    dReal r_numerator = (cx-ax)*(bx-ax) + (cy-ay)*(by-ay);
-    dReal r_denomenator = (bx-ax)*(bx-ax) + (by-ay)*(by-ay);
-    dReal r = r_numerator / r_denomenator;
+	dReal r_numerator = (cx-ax)*(bx-ax) + (cy-ay)*(by-ay);
+	dReal r_denomenator = (bx-ax)*(bx-ax) + (by-ay)*(by-ay);
+	dReal r = r_numerator / r_denomenator;
 
     dReal px = ax + r*(bx-ax);
     dReal py = ay + r*(by-ay);
 
     dReal s =  ((ay-cy)*(bx-ax)-(ax-cx)*(by-ay) ) / r_denomenator;
 
-    distanceLine = fabs(s)*sqrt(r_denomenator);
+	distanceLine = fabs(s)*sqrt(r_denomenator);
 
-    dReal xx = px;
-    dReal yy = py;
+	dReal xx = px;
+	dReal yy = py;
 
-    if ( (r >= 0) && (r <= 1) )
-    {
-        distanceSegment = distanceLine;
-    }
-    else
-    {
+	if ( (r >= 0) && (r <= 1) )
+	{
+		distanceSegment = distanceLine;
+	}
+	else
+	{
 
-        dReal dist1 = (cx-ax)*(cx-ax) + (cy-ay)*(cy-ay);
-        dReal dist2 = (cx-bx)*(cx-bx) + (cy-by)*(cy-by);
-        if (dist1 < dist2)
-        {
-            xx = ax;
-            yy = ay;
-            distanceSegment = sqrt(dist1);
-        }
-        else
-        {
-            xx = bx;
-            yy = by;
-            distanceSegment = sqrt(dist2);
-        }
+		dReal dist1 = (cx-ax)*(cx-ax) + (cy-ay)*(cy-ay);
+		dReal dist2 = (cx-bx)*(cx-bx) + (cy-by)*(cy-by);
+		if (dist1 < dist2)
+		{
+			xx = ax;
+			yy = ay;
+			distanceSegment = sqrt(dist1);
+		}
+		else
+		{
+			xx = bx;
+			yy = by;
+			distanceSegment = sqrt(dist2);
+		}
 
 
-    }
+	}
     xout = xx;
     yout = yy;
 }
@@ -1003,7 +958,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     q_s_old = q_s;
     bClearBadJoints = true; //setting this to true will make the algorithm attempt to move joints that are at joint limits at every iteration
 
-    std::map<string,Vector> control_points_in_collision;
 
     if(bDRAW)
     {
@@ -1013,12 +967,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         }
     }
 
-    // std::multimap<string,Vector> control_points;
-    // if(bOBSTACLE_AVOIDANCE)
-    // {
-    //     ControlPointSampling(control_points);
-    // }
-
     bBalanceGradient = false;
     Vector perpvec;
 
@@ -1027,8 +975,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         _numitr++;
 
         bLimit = false;
-
-        // cout<<"Iteration: "<<kk<<endl;
 
         _pRobot->SetActiveDOFValues(q_s);
         if(bWRITETRAJ)
@@ -1058,6 +1004,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         if(bPRINT)
             RAVELOG_INFO("x error: %f\n",x_error);
 
+
         //if balance stuff is on, error will go up sometimes, so don't do this check
 
         if(balance_mode == BALANCE_NONE && (x_error >= prev_error || (prev_error - x_error < epsilon/10))&& x_error > epsilon)
@@ -1074,6 +1021,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         }
         else
             stepsize = maxstep;
+
 
         if(bPRINT)
             RAVELOG_INFO("stepsize: %f\n",stepsize);
@@ -1104,7 +1052,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             }
         }
 
-
         if(bClearBadJoints)
         {
             badjointinds.resize(0);
@@ -1120,11 +1067,17 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
 
+	    if(bOBSTACLE_AVOIDANCE == true)
+	    {
+		//GetOAJacobian(Transform(),Jtemp3);
+	    }
+
             //RAVELOG_INFO("xerror: %f\n",x_error);
-            if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
+            if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)))
             {
-                if(bPRINT)
-                    RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
+                //if(bPRINT)
+                //    RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
+                RAVELOG_DEBUG("Projection successfull _numitr: %d\n",_numitr);
                 return true;
             }
 
@@ -1158,8 +1111,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                         bBalanceGradient = false;
                    }
                 }
-            }
 
+
+            }
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
                 for(int k = 0; k < _numtargdims; k++)
@@ -1192,114 +1146,23 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             Jplus = J.t()*Minv;
             //PrintMatrix(Jplus.Store(),_numdofs,_numtargdims,"Jplus: ");
-
-            //Add collision avoidance here
-            //order: collision avoidance -> reach goal -> remain balance
-            if(bOBSTACLE_AVOIDANCE)
-            {
-                obstacleavoidancestep.ReSize(_numdofs);
-                obstacleavoidancestep = 0;
-                NEWMAT::ColumnVector repulsive_vector_column;
-                control_points_in_collision.clear();
-                std::map<string,Vector> control_point_repulsive_vector;
-                std::map<string,NEWMAT::Matrix> control_point_jacobian;
-                for(std::map<string,Vector>::iterator ctrl_it = control_points.begin(); ctrl_it != control_points.end(); ctrl_it++)
-                {
-                    Vector repulsive_vector;
-                    GetRepulsiveVector(repulsive_vector, ctrl_it);
-
-                    if(repulsive_vector.lengthsqr3() != 0)
-                    {
-                        Jtemp3.ReSize(3,_numdofs);
-                        GetOAJacobian(Transform(), Jtemp3, ctrl_it);
-                        control_points_in_collision.insert(*ctrl_it);
-                        control_point_repulsive_vector.insert(std::pair<string,Vector>(ctrl_it->first,repulsive_vector));
-                        control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,Jtemp3));
-                    }
-
-                    // repulsive_vector_c(1) = repulsive_vector[0];
-                    // repulsive_vector_c(2) = repulsive_vector[1];
-                    // repulsive_vector_c(3) = repulsive_vector[2];
-                    // obstacleavoidancestep = obstacleavoidancestep + (Jtemp3.t()*Moainv)*(1*repulsive_vector_c);
-                }
-
-                if(!control_points_in_collision.empty())
-                {
-                    //Jtemp3.CleanUp();
-                    Jtemp3.ReSize(0,_numdofs);
-                    repulsive_vector_column.ReSize(3*control_points_in_collision.size());
-
-                    int point_index = 0;
-
-                    //stack the repulsive vector and jacobian matrix
-                    for(std::map<string,Vector>::iterator ctrl_it = control_points_in_collision.begin(); ctrl_it != control_points_in_collision.end(); ctrl_it++)
-                    {
-                        Jtemp3 &= control_point_jacobian.find(ctrl_it->first)->second;
-                        repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
-                        repulsive_vector_column(point_index*3+2) = control_point_repulsive_vector.find(ctrl_it->first)->second.y;
-                        repulsive_vector_column(point_index*3+3) = control_point_repulsive_vector.find(ctrl_it->first)->second.z;
-                        point_index++;
-                    }
-
-                    for(int j = 0; j < badjointinds.size(); j++)
-                        for(int k = 0; k < Jtemp3.Nrows(); k++)
-                            Jtemp3(k+1,badjointinds[j]+1) = 0;
-
-                    NEWMAT::DiagonalMatrix Reg3(Jtemp3.Nrows());
-                    Reg3 = 0.0001;
-                    Moa.ReSize(Jtemp3.Nrows());
-                    Moainv.ReSize(Jtemp3.Nrows());
-                    Moa << (Jtemp3*Jtemp3.t()) + Reg3;
-
-                    invConditioningBound(10000,Moa,Moainv);
-                    obstacleavoidancestep = (Jtemp3.t()*Moainv)*(0.05*repulsive_vector_column);
-                    obstacleavoidancestep = obstacleavoidancestep / control_points_in_collision.size();
-                }
- 
-            }
-
             if(bBalanceGradient)
             {
-                Mbal << (Jtemp2*Jtemp2.t()) + Reg2;
-                invConditioningBound(10000,Mbal,Mbalinv);
+               Mbal << (Jtemp2*Jtemp2.t()) + Reg2;
+               invConditioningBound(10000,Mbal,Mbalinv);
 
-                NEWMAT::Matrix Jtemp2plus = Jtemp2.t()*Mbalinv;
 
-                //do ik, then move toward balance in null space
-                if(bOBSTACLE_AVOIDANCE)
-                {
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp2plus*(1*balancedx) + (NEWMAT::IdentityMatrix(_numdofs) - Jtemp2plus*Jtemp2)*obstacleavoidancestep);
-                }
-                else
-                {
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*Jtemp2plus*(1*balancedx);
-                }
-                
+               //do ik, then move toward balance in null space
+               nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp2.t()*Mbalinv)*(1*balancedx);
+
             }
             else
             {
-                if(bOBSTACLE_AVOIDANCE)
-                {
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*obstacleavoidancestep;
-                }
-                else
-                {
-                    nullspacestep = 0;
-                }
+                nullspacestep = 0;
+
             }
 
             step = magnitude*Jplus*(dx) + nullspacestep;
-
-            // cout<<"step: "<<endl;
-            // cout<<step.t()<<endl;
-            // cout<<"pose constraint step:"<<endl;
-            // cout<<(step-nullspacestep).t()<<endl;
-            // cout<<"nullspacestep: "<<endl;
-            // cout<<nullspacestep.t()<<endl;
-            // cout<<"obstacleavoidancestep: "<<endl;
-            // cout<<obstacleavoidancestep.t()<<endl;
-            // string hhh;
-            // cin>>hhh;
 
             //RAVELOG_INFO("stepnorm: %f   nullspacestepnorm: %f\n", step.NormFrobenius(), nullspacestep.NormFrobenius());
             if(bPRINT)
@@ -1315,7 +1178,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 {
                     if(bPRINT)
                         RAVELOG_INFO("Jacobian going past joint limit. J%d: %f outside %f to %f\n",i,q_s[i],_lowerLimit[i],_upperLimit[i]);
-                    
+
                     if(q_s[i] < _lowerLimit[i])
                         q_s[i] = _lowerLimit[i];
                     if(q_s[i] > _upperLimit[i])
@@ -1325,11 +1188,14 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     bLimit = true;
 
                 }
+
+
             }
 
             //move back to previous point if any joint limits
             if(bLimit)
             {
+
                 q_s = q_s_old;
             }
 
@@ -1346,195 +1212,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
 }
 
-// void GeneralIK::ControlPointSampling(std::multimap<string,Vector>& control_points)
-// {
-//     //std::vector<string> sampled_links = ['l_foot','l_shin','l_thigh','r_foot','r_shin','r_thigh','torso','chest','l_upper_arm','l_forearm','r_upper_arm','r_forearm','head'];
-//     //std::vector<string> sampled_links = ["l_foot","l_shin","r_foot","r_shin"];
-//     std::vector<string> sampled_links;
-//     sampled_links.push_back("l_foot");
-//     sampled_links.push_back("l_shin");
-//     sampled_links.push_back("l_thigh");
-//     sampled_links.push_back("r_foot");
-//     sampled_links.push_back("r_shin");
-//     sampled_links.push_back("r_thigh");
-//     sampled_links.push_back("l_palm");
-//     sampled_links.push_back("r_palm");
-
-
-//     for(std::vector<string>::iterator it = sampled_links.begin(); it != sampled_links.end(); it++)
-//     {
-//         control_points.insert(std::pair<string,Vector>(*it,_pRobot->GetLink(*it)->GetCOMOffset()));
-//     }
-
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_shin","r_shin"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_foot","r_foot"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_palm","l_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_index_prox","l_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_index_med","l_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("l_index_dist","l_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("r_palm","r_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("r_index_prox","r_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("r_index_med","r_thigh"));
-//     self_collision_checking_pairs.push_back(std::pair<string,string>("r_index_dist","r_thigh"));
-// }
-
-void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point)
+void GeneralIK::ControlPointSampling(std::multimap<string,Transform>& control_point)
 {
-    dReal repulse_dist = 1000;
-    dReal repulse_constant = -1;
-    Transform link_transform = _pRobot->GetLink(control_point->first)->GetTransform(); //need to verify if this is the actual transform of the link
-    Vector control_point_global_position = link_transform*control_point->second;
-    repulsive_vector = Vector(0,0,0);
-    dReal shortest_dist = 100000000;
-
-    //environment collision
-    for(std::vector<KinBodyPtr>::iterator obs_it = _pObstacle.begin(); obs_it != _pObstacle.end(); obs_it++)
-    {
-        std::vector<KinBody::LinkPtr> ObstacleLink = (*obs_it)->GetLinks();
-        for(std::vector<KinBody::LinkPtr>::iterator link_it = ObstacleLink.begin(); link_it != ObstacleLink.end(); link_it++)
-        {
-            if(_pEnvironment->CheckCollision(_pRobot->GetLink(control_point->first),(*link_it)))
-            {
-                std::vector<KinBody::Link::GeometryPtr> ObstacleGeometry = (*link_it)->GetGeometries();
-                for(std::vector<KinBody::Link::GeometryPtr>::iterator geom_it = ObstacleGeometry.begin(); geom_it != ObstacleGeometry.end(); geom_it++)
-                {
-                    GeometryType obstacle_geometry_type = (*geom_it)->GetType();
-                    RaveTransform<dReal> obstacle_geometry_transform = (*obs_it)->GetTransform() * (*link_it)->GetTransform() * (*geom_it)->GetTransform();
-                    RaveTransformMatrix<dReal> obstacle_rot_matrix = geometry::matrixFromQuat(obstacle_geometry_transform.rot);
-                    RaveTransformMatrix<dReal> inverse_obstacle_rot_matrix = obstacle_rot_matrix.inverse();
-                    RaveVector<dReal> obstacle_translation = obstacle_geometry_transform.trans;
-                    RaveVector<dReal> obstacle_frame_control_point_position = inverse_obstacle_rot_matrix * (control_point_global_position-obstacle_translation);
-                    dReal dist_to_obstacle = 0;
-                    RaveVector<dReal> repulsive_vector_component(0,0,0);
-                    RaveVector<dReal> nearest_point(0,0,0);
-                    if(obstacle_geometry_type == GT_Box)
-                    {
-                        Vector box_extents = (*geom_it)->GetBoxExtents();
-                        if(obstacle_frame_control_point_position.x > box_extents.x/2)
-                            nearest_point.x = box_extents.x/2;
-                        else if(obstacle_frame_control_point_position.x < -box_extents.x/2)
-                            nearest_point.x = -box_extents.x/2;
-                        else
-                            nearest_point.x = obstacle_frame_control_point_position.x;
-                        
-                        if(obstacle_frame_control_point_position.y > box_extents.y/2)
-                            nearest_point.y = box_extents.y/2;
-                        else if(obstacle_frame_control_point_position.y < -box_extents.y/2)
-                            nearest_point.y = -box_extents.y/2;
-                        else
-                            nearest_point.y = obstacle_frame_control_point_position.y;
-
-                        if(obstacle_frame_control_point_position.z > box_extents.z/2)
-                            nearest_point.z = box_extents.z/2;
-                        else if(obstacle_frame_control_point_position.z < -box_extents.z/2)
-                            nearest_point.z = -box_extents.z/2;
-                        else
-                            nearest_point.z = obstacle_frame_control_point_position.z;
-
-                        if(obstacle_frame_control_point_position.x != nearest_point.x ||
-                           obstacle_frame_control_point_position.y != nearest_point.y ||
-                           obstacle_frame_control_point_position.z != nearest_point.z)
-                        {
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3();
-                            repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                        }
-                        else
-                        {
-                            nearest_point = RaveVector<dReal>(0,0,0);
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                            dist_to_obstacle = 0;
-                        }
-
-                    }
-                    else if(obstacle_geometry_type == GT_Sphere)
-                    {
-                        repulsive_vector_component = control_point_global_position - obstacle_translation;
-                        if(repulsive_vector_component.lengthsqr3() > (*geom_it)->GetSphereRadius())
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3() - (*geom_it)->GetSphereRadius();
-                        else
-                            dist_to_obstacle = 0;
-                        repulsive_vector_component = repulsive_vector_component.normalize3();
-                    }
-                    else if(obstacle_geometry_type == GT_Cylinder)
-                    {
-                        dReal cylinder_height = (*geom_it)->GetCylinderHeight();
-                        dReal cylinder_radius = (*geom_it)->GetCylinderRadius();
-                        //RaveVector<dReal> nearest_point(0,0,0);
-                        dReal xy_dist_to_centroid = sqrt(pow(obstacle_frame_control_point_position.x,2) + pow(obstacle_frame_control_point_position.y,2));
-
-                        if(xy_dist_to_centroid > cylinder_radius || fabs(obstacle_frame_control_point_position.z) > cylinder_height/2)
-                        {
-                            nearest_point.x = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.x;
-                            nearest_point.y = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.y;
-
-                            if(obstacle_frame_control_point_position.z > cylinder_height/2)
-                                nearest_point.z = cylinder_height/2;
-                            else if(obstacle_frame_control_point_position.z < -cylinder_height/2)
-                                nearest_point.z = -cylinder_height/2;
-                            else
-                                nearest_point.z = obstacle_frame_control_point_position.z;
-
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3();                    
-                        }
-                        else
-                        {
-                            nearest_point = RaveVector<dReal>(0,0,0);
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = 0;
-                        }
-
-                        repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                    }
-
-                    if(dist_to_obstacle < repulse_dist)
-                        repulsive_vector = repulsive_vector + repulsive_vector_component;
-
-                    if(dist_to_obstacle < shortest_dist)
-                        shortest_dist = dist_to_obstacle;
-
-
-                    // cout<<endl;
-                    // cout<<"Link in Collision: "<<control_point->first<<endl;
-                    // cout<<"Repulsive Vector: ("<<repulsive_vector_component.x<<","<<repulsive_vector_component.y<<","<<repulsive_vector_component.z<<")"<<endl;
-                    // cout<<"Control Point: ("<<control_point_global_position.x<<","<<control_point_global_position.y<<","<<control_point_global_position.z<<")"<<endl;
-                    // cout<<"Nearest Point: ("<<nearest_point.x<<","<<nearest_point.y<<","<<nearest_point.z<<")"<<endl;
-                    // cout<<"Obstacle Position: ("<<obstacle_translation.x<<","<<obstacle_translation.y<<","<<obstacle_translation.z<<")"<<endl;
-                    // string hhh;
-                    // cin >> hhh;
-                }
-
-            }
-        }
-    }
-
-    //self collision
-    for(std::vector<std::pair<string,string> >::iterator sc_it = self_collision_checking_pairs.begin(); sc_it != self_collision_checking_pairs.end(); sc_it++)
-    {
-        string link_1 = (*sc_it).first;
-        string link_2 = (*sc_it).second;
-        if(control_point->first == link_1 || control_point->first == link_2)
-        {
-            if(_pEnvironment->CheckCollision(_pRobot->GetLink(link_1),_pRobot->GetLink(link_2)))
-            {
-                RaveVector<dReal> repulsive_vector_component(0,0,0);
-                string other_link = (control_point->first == link_1) ? link_2 : link_1;
-                RaveVector<dReal> other_link_centroid = _pRobot->GetLink(other_link)->GetTransform().trans;
-                repulsive_vector_component = (control_point_global_position - other_link_centroid).normalize3();
-                repulsive_vector = repulsive_vector + repulsive_vector_component;
-                shortest_dist = 0;
-            }
-        }
-        
-    }
-
-    if(repulsive_vector.lengthsqr3() != 0)
-        repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/repulsive_vector.lengthsqr3());
-
-    //for each obstacle, find its geometry type
-    //calculate distance between the control point and the obstacle
-    //calculate the repulsive from each obstacle according to ther relative position and distance
-    //sum the repulsive vector
+   
 }
