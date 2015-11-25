@@ -490,21 +490,23 @@ void ElasticStrips::UpdateZandXYJacobian()
 {
     // XY
     JXY.ReSize(2*desired_manip_pose.size(),_numdofs);
+    JXYplus.ReSize(_numdofs,2*desired_manip_pose.size());
     Mxy.ReSize(2*desired_manip_pose.size());
     dxy.ReSize(2*desired_manip_pose.size());
     Regxy.ReSize(2*desired_manip_pose.size());
     Regxy = 0.0001;
     _pritority_tree.find("XY")->second.J = &JXY;
-    _pritority_tree.find("XY")->second.M = &Mxy;
+    _pritority_tree.find("XY")->second.Jplus = &JXYplus;
 
     // Z
     JZ.ReSize(desired_manip_pose.size(),_numdofs);
+    JZplus.ReSize(_numdofs,desired_manip_pose.size());
     Mz.ReSize(desired_manip_pose.size());
     dz.ReSize(desired_manip_pose.size());
     Regz.ReSize(desired_manip_pose.size());
     Regz = 0.0001;
     _pritority_tree.find("Z")->second.J = &JZ;
-    _pritority_tree.find("Z")->second.M = &Mz;
+    _pritority_tree.find("Z")->second.Jplus = &JZplus;
 
     map<string,Transform> desired_manip_pose = _parameters->_desired_manip_pose.find(w)->second;
     for(map<string,Transform>::iterator dmp_it = desired_manip_pose.begin(); dmp_it != desired_manip_pose.end(); dmp_it++)
@@ -532,6 +534,10 @@ void ElasticStrips::UpdateZandXYJacobian()
 
     invConditioningBound(10000,Mxy,Mxyinv);
     invConditioningBound(10000,Mz,Mzinv);
+
+    JXYplus = JXY.t()*Mxyinv;
+    JZplus = JZ.t()*Mzinv;
+
 }
 
 void ElasticStrips::UpdateCOGJacobian(Transform taskframe_in, Vector& center)
@@ -576,7 +582,7 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
 {
     dReal repulse_dist = 1000;
     dReal repulse_constant = -1;
-    Transform link_transform = _pRobot->GetLink(control_point->first)->GetTransform(); //need to verify if this is the actual transform of the link
+    Transform link_transform = _pRobot->GetLink(control_point->first)->GetTransform();
     Vector control_point_global_position = link_transform*control_point->second;
     repulsive_vector = Vector(0,0,0);
     dReal shortest_dist = 100000000;
@@ -689,15 +695,6 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
                     if(dist_to_obstacle < shortest_dist)
                         shortest_dist = dist_to_obstacle;
 
-
-                    // cout<<endl;
-                    // cout<<"Link in Collision: "<<control_point->first<<endl;
-                    // cout<<"Repulsive Vector: ("<<repulsive_vector_component.x<<","<<repulsive_vector_component.y<<","<<repulsive_vector_component.z<<")"<<endl;
-                    // cout<<"Control Point: ("<<control_point_global_position.x<<","<<control_point_global_position.y<<","<<control_point_global_position.z<<")"<<endl;
-                    // cout<<"Nearest Point: ("<<nearest_point.x<<","<<nearest_point.y<<","<<nearest_point.z<<")"<<endl;
-                    // cout<<"Obstacle Position: ("<<obstacle_translation.x<<","<<obstacle_translation.y<<","<<obstacle_translation.z<<")"<<endl;
-                    // string hhh;
-                    // cin >> hhh;
                 }
 
             }
@@ -721,7 +718,6 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
                 shortest_dist = 0;
             }
         }
-        
     }
 
     if(repulsive_vector.lengthsqr3() != 0)
@@ -733,7 +729,7 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
     //sum the repulsive vector
 }
 
-void ElasticStrips::UpdateOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, std::multimap<string,Vector>::iterator& control_point)
+void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in)
 {
     //calculate the velocity of each control point
     //calculate jacobian for each control point to generate the joint angular velocity
@@ -741,7 +737,7 @@ void ElasticStrips::UpdateOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, 
 
     doa.ReSize(_numdofs);
     doa = 0;
-    NEWMAT::ColumnVector repulsive_vector_column;
+
     std::map<string,Vector> control_points_in_collision;
     std::map<string,Vector> control_point_repulsive_vector;
     std::map<string,NEWMAT::Matrix> control_point_jacobian;
@@ -753,73 +749,72 @@ void ElasticStrips::UpdateOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, 
 
         if(repulsive_vector.lengthsqr3() != 0)
         {
-            Jtemp3.ReSize(3,_numdofs);
-            GetOAJacobian(Transform(), Jtemp3, ctrl_it);
+            Jp.ReSize(3,_numdofs);
+
+            dReal fTotalMass = 0;
+
+            _TMtask = TransformMatrix(taskframe_in.inverse());
+            _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
+            _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
+            _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+
+            KinBody::LinkPtr target_link = _pRobot->GetLink(ctrl_it->first);
+            std::vector<dReal> temp;
+
+            _pRobot->CalculateActiveJacobian(target_link->GetIndex(), (target_link->GetTransform() * ctrl_it->second), temp);
+            memcpy(Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+
+            Jp = _tasktm * Jp0;
+
             control_points_in_collision.insert(*ctrl_it);
             control_point_repulsive_vector.insert(std::pair<string,Vector>(ctrl_it->first,repulsive_vector));
-            control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,Jtemp3));
+            control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,Jtemp));
         }
-
-        // repulsive_vector_c(1) = repulsive_vector[0];
-        // repulsive_vector_c(2) = repulsive_vector[1];
-        // repulsive_vector_c(3) = repulsive_vector[2];
-        // doa = doa + (Jtemp3.t()*Moainv)*(1*repulsive_vector_c);
     }
 
     if(!control_points_in_collision.empty())
     {
-        //Jtemp3.CleanUp();
-        Jtemp3.ReSize(0,_numdofs);
-        repulsive_vector_column.ReSize(3*control_points_in_collision.size());
+        Jp.ReSize(0,_numdofs);
+        doa.ReSize(3*control_points_in_collision.size());
 
         int point_index = 0;
 
         //stack the repulsive vector and jacobian matrix
         for(std::map<string,Vector>::iterator ctrl_it = control_points_in_collision.begin(); ctrl_it != control_points_in_collision.end(); ctrl_it++)
         {
-            Jtemp3 &= control_point_jacobian.find(ctrl_it->first)->second;
-            repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
-            repulsive_vector_column(point_index*3+2) = control_point_repulsive_vector.find(ctrl_it->first)->second.y;
-            repulsive_vector_column(point_index*3+3) = control_point_repulsive_vector.find(ctrl_it->first)->second.z;
+            Jp &= control_point_jacobian.find(ctrl_it->first)->second;
+            doa(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
+            doa(point_index*3+2) = control_point_repulsive_vector.find(ctrl_it->first)->second.y;
+            doa(point_index*3+3) = control_point_repulsive_vector.find(ctrl_it->first)->second.z;
             point_index++;
         }
 
-        for(int j = 0; j < badjointinds.size(); j++)
-            for(int k = 0; k < Jtemp3.Nrows(); k++)
-                Jtemp3(k+1,badjointinds[j]+1) = 0;
+        JOA = Jp;
 
-        NEWMAT::DiagonalMatrix Reg3(Jtemp3.Nrows());
-        Reg3 = 0.0001;
-        Moa.ReSize(Jtemp3.Nrows());
-        Moainv.ReSize(Jtemp3.Nrows());
-        Moa << (Jtemp3*Jtemp3.t()) + Reg3;
-
+        Regoa.ReSize(JOA.Nrows());
+        Regoa = 0.0001;
+        Moa.ReSize(JOA.Nrows());
+        Moainv.ReSize(JOA.Nrows());
+        Moa << (JOA*JOA.t()) + Regoa;
         invConditioningBound(10000,Moa,Moainv);
-        doa = (Jtemp3.t()*Moainv)*(0.05*repulsive_vector_column);
-        doa = doa / control_points_in_collision.size();
+        JOAplus.ReSize(_numdofs,3*control_points_in_collision.size());
+        JOAplus = JOA.t()*Moainv;
+
+        doa = 0.05 * doa / control_points_in_collision.size();
     }
+    else
+    {
+        doa.ReSize(1);
+        JOA.ReSize(1,_numdofs);
+        JOAplus.ReSize(_numdofs,1);
+        doa = 0.0;
+        JOA = 0.0;
+        JOAplus = 0.0;
+    }
+
+    Jp.ReSize(3,_numdofs);
+    Jp0.ReSize(3,_numdofs);
 }
-
-void GeneralIK::GetOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, std::multimap<string,Vector>::iterator& control_point)
-{
-    dReal fTotalMass = 0;
-
-    _TMtask = TransformMatrix(taskframe_in.inverse());
-    _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-    _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-    _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
-
-    KinBody::LinkPtr target_link = _pRobot->GetLink(control_point->first);
-    std::vector<dReal> temp;
-
-    _pRobot->CalculateActiveJacobian(target_link->GetIndex(), (target_link->GetTransform() * control_point->second), temp);
-    memcpy(Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
-
-    Jp = _tasktm * Jp0;
-
-    J = Jp;    
-}
-
 
 
 void ElasticStrips::UpdateZandXYStep()
@@ -879,21 +874,23 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
     if(_parameters->bPOSTURE_CONTROL)
     {
         JPC.ReSize(6*_parameters->_posture_control.size(),_numdofs);
+        JPCplus.ReSize(_numdofs,6*_parameters->_posture_control.size());
         Mpc.ReSize(6*_parameters->_posture_control.size());
         Regpc.ReSize(6*_parameters->_posture_control.size());
         Regpc = 0.0001;
         _pritority_tree.find("Posture")->second.J = &JPC;
-        _pritority_tree.find("Posture")->second.M = &Mpc;
+        _pritority_tree.find("Posture")->second.Jplus = &JPCplus;
     }
 
     if(_parameters->balance_mode != BALANCE_NONE)
     {
         JCOG.ReSize(2,_numdofs);
+        JCOGplus.ReSize(_numdofs,2);
         Mcog.ReSize(2);
         Regcog.ReSize(2);
         Regcog = 0.0001;
         _pritority_tree.find("Balance")->second.J = &JCOG;
-        _pritority_tree.find("Balance")->second.M = &Mcog;
+        _pritority_tree.find("Balance")->second.Jplus = &JCOGplus;
     }
     
 
@@ -934,8 +931,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             // 4. Obstacle Avoidance
             if(_parameters->bOBSTACLE_AVOIDANCE)
             {
-                UpdateOAJacobian();
-                UpdateOAStep();
+                UpdateOAJacobian(Transform());
             }
             
             // 5. Posture Control

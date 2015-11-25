@@ -40,7 +40,7 @@ class PriorityTree
 				string name;
 				string parent;
 				boost::shared_ptr< NEWMAT::Matrix > J;
-				boost::shared_ptr< NEWMAT::SymmetricMatrix > M;
+				boost::shared_ptr< NEWMAT::Matrix > Jplus;
 		};
 
 		bool ConstructSubtree(std::vector<string> node_name, std::map<string,PriorityNode>& subtree)
@@ -101,12 +101,11 @@ class ElasticStrips : ModuleBase
 
     void UpdateZandXYJacobian();
     void UpdateCOGJacobian();
-    void UpdateOAJacobian();
+    void UpdateOAJacobianandStep(Transform taskframe_in);
     void UpdatePCJacobian();
 
     void UpdateZandXYStep();
     void UpdateCOGStep();
-    void UpdateOAStep();
     void UpdatePCStep();
 
     NEWMAT::ColumnVector CalculateStep();
@@ -137,17 +136,22 @@ class ElasticStrips : ModuleBase
     NEWMAT::Matrix J;
     
     NEWMAT::Matrix JOA;
+    NEWMAT::Matrix JOAplus;
     NEWMAT::ColumnVector doa;
     
     NEWMAT::Matrix JZ;
+    NEWMAT::Matrix JZplus;
     NEWMAT::Matrix JXY;
+    NEWMAT::Matrix JXYplus;
     NEWMAT::ColumnVector dxy;
     NEWMAT::ColumnVector dz;
 
     NEWMAT::Matrix JCOG;
+    NEWMAT::Matrix JCOGplus;
     NEWMAT::ColumnVector dcog;
 
     NEWMAT::Matrix JPC;
+    NEWMAT::Matrix JPCplus;
     NEWMAT::ColumnVector dpc;
     
     NEWMAT::ColumnVector dx;
