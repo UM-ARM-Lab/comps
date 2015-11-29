@@ -4,6 +4,25 @@
 #include <cdd/setoper.h>
 #include <cdd/cdd.h>
 
+class PriorityNode
+{
+    public:
+        PriorityNode(string node_name, string parent_name)
+        {
+            name = node_name;
+            parent = parent_name;
+        }
+
+        string name;
+        string parent;
+        // boost::shared_ptr< NEWMAT::Matrix > J;
+        // boost::shared_ptr< NEWMAT::Matrix > Jplus;
+        // boost::shared_ptr< NEWMAT::ColumnVector > v;
+        NEWMAT::Matrix* J;
+        NEWMAT::Matrix* Jplus;
+        NEWMAT::ColumnVector* v;
+};
+
 class PriorityTree
 {
 	public:
@@ -27,21 +46,6 @@ class PriorityTree
 			PriorityNode Posture("Posture","Balance");
 			data.insert(std::pair<string,PriorityNode>(Posture.name,Posture));
 		}
-
-		class PriorityNode
-		{
-			public:
-				PriorityNode(string node_name, string parent_name)
-				{
-					name = node_name;
-					parent = parent_name;
-				}
-
-				string name;
-				string parent;
-				boost::shared_ptr< NEWMAT::Matrix > J;
-				boost::shared_ptr< NEWMAT::Matrix > Jplus;
-		};
 
 		bool ConstructSubtree(std::vector<string> node_name, std::map<string,PriorityNode>& subtree)
 		{
@@ -79,7 +83,7 @@ class PriorityTree
 };
 
 
-class ElasticStrips : ModuleBase
+class ElasticStrips : public ModuleBase
 {
   public:
     ElasticStrips(EnvironmentBasePtr penv, std::istream& ss) : ModuleBase(penv) {
@@ -87,65 +91,92 @@ class ElasticStrips : ModuleBase
                         "Run the Elastic Strips Planner");
 
         _esEnv = penv;
+        _priority_tree = PriorityTree();
+
     }
     virtual ~ElasticStrips() {}
 
+    int main(const std::string& cmd);
+    void SetActiveRobots(const std::vector<RobotBasePtr >& robots);
+
     int RunElasticStrips(ostream& sout, istream& sinput);
-    bool InitPlan(RobotBasePtr robot, PlannerParametersConstPtr params);
+    void InitPlan(boost::shared_ptr<ESParameters> params);
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
     // bool SmoothTrajectory(TrajectoryBasePtr ptraj);
-    virtual PlannerParametersConstPtr GetParameters() const {return _parameters;}
     void FindContactRegions();
-    void FindContactConsistentManipTranslation();
+    void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs,string link_name);
+    dReal TransformDifference(dReal * dx,Transform tm_ref, Transform tm_targ);
 
-    void UpdateZandXYJacobian();
-    void UpdateCOGJacobian();
+    void GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point);
+
+    void UpdateZandXYJacobianandStep(Transform taskframe_in, int config_index);
+    void UpdateCOGJacobianandStep(Transform taskframe_in);
     void UpdateOAJacobianandStep(Transform taskframe_in);
-    void UpdatePCJacobian();
-
-    void UpdateZandXYStep();
-    void UpdateCOGStep();
-    void UpdatePCStep();
+    void UpdatePCJacobianandStep(Transform taskframe_in);
 
     NEWMAT::ColumnVector CalculateStep();
 
   private:
+
+    void QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi);
+    int invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed);
+    void RemoveBadJointJacobianCols(NEWMAT::Matrix& J);
+
     int _numdofs;
 
     EnvironmentBasePtr _esEnv;
     RobotBasePtr _esRobot;
     std::vector<dReal> _lowerLimit, _upperLimit;
 
-    PriorityTree _pritority_tree;
+    PriorityTree _priority_tree;
 
     std::stringstream _outputstream;
 
     boost::shared_ptr<ESParameters> _parameters;
 
+    string _strRobotName; ///< name of the active robot
+
     Vector cogtarg;
     Vector curcog;
     Balance balance_checker;
 
+    std::map<size_t,bool> stable_waypoint;
+
     std::map<size_t, std::map<string,int> > contact_consistent_region; // <waypoint index, <manip_name,cc manip position> >
-    std::vector< std::pair<string,Vector> > contact_consistent_manip_translation; // store the contact consistent point/translation in each iteration
+    std::vector< std::pair<string,Vector> > contact_consistent_manip_translation; // store the contact consistent point/translation in each iteration, index: traj index, <link/endeffector name, position of the link>
 
-    NEWMAT::Matrix Jp;
-    NEWMAT::Matrix Jp0;
+    NEWMAT::Matrix _Jp;
+    NEWMAT::Matrix _Jp0;
 
-    NEWMAT::Matrix J;
-    
+    NEWMAT::Matrix _Jr;
+    NEWMAT::Matrix _Jr0;
+
+    NEWMAT::Matrix _Jr_proper;
+
+    NEWMAT::Matrix _Jr_quat;
+
+    NEWMAT::Matrix _tasktm;
+    NEWMAT::Matrix _E_rpy;
+    NEWMAT::Matrix _E_rpy_inv;
+
+    TransformMatrix _TMtask;
+
+    dReal _psi, _theta, _phi;
+    dReal Cphi,Ctheta,Cpsi,Sphi,Stheta,Spsi;
+
     NEWMAT::Matrix JOA;
     NEWMAT::Matrix JOAplus;
     NEWMAT::ColumnVector doa;
     
     NEWMAT::Matrix JZ;
     NEWMAT::Matrix JZplus;
+    NEWMAT::ColumnVector dz;
+
     NEWMAT::Matrix JXY;
     NEWMAT::Matrix JXYplus;
     NEWMAT::ColumnVector dxy;
-    NEWMAT::ColumnVector dz;
-
+    
     NEWMAT::Matrix JCOG;
     NEWMAT::Matrix JCOGplus;
     NEWMAT::ColumnVector dcog;
@@ -153,17 +184,6 @@ class ElasticStrips : ModuleBase
     NEWMAT::Matrix JPC;
     NEWMAT::Matrix JPCplus;
     NEWMAT::ColumnVector dpc;
-    
-    NEWMAT::ColumnVector dx;
-    NEWMAT::ColumnVector dx_trans;
-    NEWMAT::ColumnVector step;
-    NEWMAT::ColumnVector obstacleavoidancestep;
-
-    NEWMAT::SymmetricMatrix M;
-    NEWMAT::SymmetricMatrix Minv;
-    
-    NEWMAT::SymmetricMatrix Mcog;
-    NEWMAT::SymmetricMatrix Mcoginv;
     
     NEWMAT::SymmetricMatrix Moa;
     NEWMAT::SymmetricMatrix Moainv;
@@ -174,20 +194,45 @@ class ElasticStrips : ModuleBase
     NEWMAT::SymmetricMatrix Mxy;
     NEWMAT::SymmetricMatrix Mxyinv;
 
+    NEWMAT::SymmetricMatrix Mcog;
+    NEWMAT::SymmetricMatrix Mcoginv;
+
     NEWMAT::SymmetricMatrix Mpc;
     NEWMAT::SymmetricMatrix Mpcinv;
 
-
     NEWMAT::ColumnVector step;
 
+
+    NEWMAT::DiagonalMatrix Regoa;
     NEWMAT::DiagonalMatrix Regxy;
     NEWMAT::DiagonalMatrix Regz;
     NEWMAT::DiagonalMatrix Regcog;
-    NEWMAT::DiagonalMatrix Regoa;
     NEWMAT::DiagonalMatrix Regpc;
     
-    // NEWMAT::SymmetricMatrix Mbalperp;
-    // NEWMAT::SymmetricMatrix Mbalperpinv;
+    //used in transform difference
+    Transform _tmtemp;
+    dReal _sumsqr,_sumsqr2;
+    Vector _q1, _q2;
+
+    //used in QuatToRPY
+    dReal a,b,c,d;
+    static Vector RPYIdentityOffsets[8];
+    dReal _min_dist;
+    Vector _temp_vec;
+    dReal _temp_dist;
+
+    //for inverse conditioning
+    NEWMAT::DiagonalMatrix _S;
+    NEWMAT::Matrix _V;
+
+    dReal epsilon = 0.001; //error tolerance for manipulator pose constraint
+    dReal xy_error;
+
+    bool bInCollision;
+
+    bool bLimit;
+    std::vector<int> badjointinds;
+
 };
 
 

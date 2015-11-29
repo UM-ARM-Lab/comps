@@ -4,7 +4,7 @@
 Balance::Balance(RobotBasePtr r, std::vector<string> s_links, Vector p_scale, Vector p_trans)
 {
     robot = r;
-    support_links = s_links;
+    supportlinks = s_links;
     polyscale = p_scale;
     polytrans = p_trans;
     balance_mode = BALANCE_SUPPORT_POLYGON;
@@ -105,7 +105,7 @@ std::vector<Vector> Balance::GetSupportPoints(RobotBase::ManipulatorPtr p_manip)
 
     std::vector<Vector> contacts;
     for (int i = 0; i < attached_links.size(); i++) {
-        const char* link_name = attached_links[i]->GetName().c_str();
+        // const char* link_name = attached_links[i]->GetName().c_str();
 
         // Transforms the tool_dir into the link frame
         GetSupportPointsForLink(attached_links[i], world_to_manip * attached_links[i]->GetTransform() * tool_dir, p_manip->GetTransform(), contacts);
@@ -113,7 +113,6 @@ std::vector<Vector> Balance::GetSupportPoints(RobotBase::ManipulatorPtr p_manip)
     return contacts;
 }
 
-const int CONE_DISCRETIZATION_RESOLUTION = 8;
 void Balance::GetFrictionCone(Vector& center, Vector& direction, dReal mu, NEWMAT::Matrix* mat, int offset_r, int offset_c, Transform temp_tf) {
     // This sets `a` (for axis) to the index of `direction` that is nonzero, sets `c` (cos) to the first index that
     // is zero, and `s` (sin) to the second that is zero. Formulas derived from a truth table.
@@ -245,7 +244,7 @@ void Balance::GetGIWC()
         for (int c = 0; c < giwc_span.Ncols(); c++) {
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
-            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
+            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
         }
     }
 
@@ -263,7 +262,7 @@ void Balance::GetGIWC()
     for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
         // Note this skips element 0 of each row, which should always be 0
         for (int col = 1; col < giwc_face_cdd->colsize; col++) {
-            giwc(r, c-1) = dd_get_d(giwc_face_cdd->matrix[row][col]);
+            giwc(row, col-1) = dd_get_d(giwc_face_cdd->matrix[row][col]);
         }
     }
 
@@ -271,6 +270,111 @@ void Balance::GetGIWC()
     dd_FreeMatrix(giwc_span_cdd);
     dd_FreePolyhedra(poly);
     dd_free_global_constants();
+}
+
+int Balance::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut, int* numPointsOut)
+{
+
+    char flags[250];
+    int exitcode;
+    facetT *facet, *newFacet;
+    int curlong, totlong;
+    vertexT *vertex, *vertexA, *vertexB;
+    int j;
+
+
+    sprintf (flags, "qhull QJ Pp s Tc ");
+    //FILE* junk = fopen("qhullout.txt","w");
+
+    exitcode= qh_new_qhull (2, numPointsIn, pointsIn, false,
+                            flags, NULL, stderr);
+    //fclose(junk);
+    *numPointsOut = qh num_vertices;
+    *pointsOut = (coordT *)malloc(sizeof(coordT)*(*numPointsOut)*2);
+
+    FORALLfacets {
+        facet->seen = 0;
+    }
+
+    FORALLvertices {
+        vertex->seen = 0;
+    }
+
+    facet=qh facet_list;
+    j=0;
+
+    while(1) {
+        if (facet==NULL) {
+            // empty hull
+            break;
+        }
+        vertexA = (vertexT*)facet->vertices->e[0].p;
+        vertexB = (vertexT*)facet->vertices->e[1].p;
+        if (vertexA->seen==0) {
+            vertexA->seen = 1;
+            (*pointsOut)[j++] = vertexA->point[0];
+            (*pointsOut)[j++] = vertexA->point[1];
+        }
+        if (vertexB->seen==0) {
+            vertexB->seen = 1;
+            (*pointsOut)[j++] = vertexB->point[0];
+            (*pointsOut)[j++] = vertexB->point[1];
+        }
+
+
+        //qh_printfacet(stderr, facet);
+        facet->seen = 1;
+        newFacet = (facetT*)facet->neighbors->e[0].p;
+        if (newFacet->seen==1) newFacet = (facetT*)facet->neighbors->e[1].p;
+        if (newFacet->seen==1) { break; }
+        facet = newFacet;
+    }
+
+    qh_freeqhull(!qh_ALL);
+    qh_memfreeshort (&curlong, &totlong);
+
+    return exitcode;
+}
+
+Balance::Point2D Balance::compute2DPolygonCentroid(const Balance::Point2D* vertices, int vertexCount)
+{
+    Point2D centroid = {0, 0};
+    double signedArea = 0.0;
+    double x0 = 0.0; // Current vertex X
+    double y0 = 0.0; // Current vertex Y
+    double x1 = 0.0; // Next vertex X
+    double y1 = 0.0; // Next vertex Y
+    double a = 0.0;  // Partial signed area
+
+    // For all vertices except last
+    int i=0;
+    for (i=0; i<vertexCount-1; ++i)
+    {
+        x0 = vertices[i].x;
+        y0 = vertices[i].y;
+        x1 = vertices[i+1].x;
+        y1 = vertices[i+1].y;
+        a = x0*y1 - x1*y0;
+        signedArea += a;
+        centroid.x += (x0 + x1)*a;
+        centroid.y += (y0 + y1)*a;
+    }
+
+    // Do last vertex
+    x0 = vertices[i].x;
+    y0 = vertices[i].y;
+    x1 = vertices[0].x;
+    y1 = vertices[0].y;
+    a = x0*y1 - x1*y0;
+    signedArea += a;
+    centroid.x += (x0 + x1)*a;
+    centroid.y += (y0 + y1)*a;
+
+    signedArea *= 0.5;
+    centroid.x /= (6.0*signedArea);
+    centroid.y /= (6.0*signedArea);
+
+    return centroid;
 }
 
 void Balance::GetSupportPolygon()
@@ -366,8 +470,8 @@ void Balance::GetSupportPolygon()
 
     //close the polygon
     tempvecs[tempvecs.size()-1] = RaveVector<float>(supportpolyx[0],supportpolyy[0],0);
-    GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
-    graphptrs.push_back(graphptr);
+    // GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
+    // graphptrs.push_back(graphptr);
 
 
     free(pointsOut);
@@ -375,7 +479,7 @@ void Balance::GetSupportPolygon()
 
 void Balance::RefreshBalanceParameters(std::vector<dReal> q_new)
 {
-    robot.SetDOFValues(q_new);
+    robot->SetDOFValues(q_new);
     
     if(balance_mode == BALANCE_SUPPORT_POLYGON)
     {
@@ -443,19 +547,19 @@ bool Balance::CheckSupport(Vector center)
         }
 
     }
-    solutionpath.push_back(center);
+
     //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
     if(balanced)
     {
-        if (bPRINT)
-            RAVELOG_INFO("Balance check: Balanced \n");
+        // if (bPRINT)
+        //     RAVELOG_INFO("Balance check: Balanced \n");
 
         return true;
     }
     else
     {
-        if (bPRINT)
-            RAVELOG_INFO("Balance check: Not balanced \n");
+        // if (bPRINT)
+        //     RAVELOG_INFO("Balance check: Not balanced \n");
 
         return false;
     }

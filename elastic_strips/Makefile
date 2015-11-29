@@ -1,14 +1,20 @@
+ifneq ($(ROS_ROOT),)
+include $(shell rospack find mk)/cmake.mk
+else
 
-all:
-	@mkdir -p build; rm -f build/CMakeCache.txt
-	cd build && cmake .. && $(MAKE) $(PARALLEL_JOBS)
+.PHONY: all install clean
 
-install:
-	cd build && $(MAKE) $(PARALLEL_JOBS) install
+all: build/Makefile
+	make -C build
 
-uninstall:
-	cd build && $(MAKE) uninstall
+install: build/Makefile
+	make -C build install
 
 clean:
-	-cd build && $(MAKE) clean
+	rm -rf build
 
+build/Makefile: CMakeLists.txt
+	mkdir -p build
+	cd build && cmake ..
+
+endif

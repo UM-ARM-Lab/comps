@@ -10,14 +10,25 @@ enum BalanceMode {
     BALANCE_GIWC
 };
 
+#define CONE_DISCRETIZATION_RESOLUTION 8
+#define CONE_COMPUTATION_PRECISION 1e4
+
 class Balance
 {
 	public:
+		Balance(){};
 		Balance(RobotBasePtr r, std::vector<string> s_links, Vector p_scale, Vector p_trans);
 		Balance(RobotBasePtr r, Vector g, std::vector<string> s_manips, std::vector<dReal> s_mus);
 		~Balance(){};
 		void RefreshBalanceParameters(std::vector<dReal> q_new); // call it after the robot is in a new configuration, and before calling CheckSupport. Takes new config.
 		bool CheckSupport(Vector center);
+
+		class Point2D
+	    {
+	        public:
+	            double x;
+	            double y;
+	    };
     	
 	private:
 		BalanceMode balance_mode;
@@ -39,6 +50,8 @@ class Balance
 		void InitializeBalanceParameters();
 
 		void GetSupportPolygon();
+		int convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut, int* numPointsOut);
+		Balance::Point2D compute2DPolygonCentroid(const Balance::Point2D* vertices, int vertexCount);
 		
 		void GetGIWC();
 		

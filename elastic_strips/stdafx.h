@@ -192,11 +192,11 @@ extern "C"
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
 #include <boost/array.hpp>
-
+#include <boost/make_shared.hpp>
 
 #include <iostream>
 #include <newmat/newmatap.h> 
-#include <newmat/newmatio.h> 
+#include <newmat/newmatio.h>
 
 
 enum PlannerState
@@ -207,10 +207,9 @@ enum PlannerState
     PS_PlanFailed = 3 ///< the planner failed on its own or was terminated from outside
 };
 
-
-#include "ElasticStrips.h"
-#include "ElasticStripsParameters.h"
 #include "Balance.h"
+#include "ElasticStripsParameters.h"
+#include "ElasticStrips.h"
 
 
 class DoubleVectorToFloatVector : public vector<float> {
