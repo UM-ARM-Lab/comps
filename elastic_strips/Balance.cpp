@@ -3,17 +3,19 @@
 
 Balance::Balance(RobotBasePtr r, std::vector<string> s_links, Vector p_scale, Vector p_trans)
 {
-    robot = r;
+    RAVELOG_INFO("Balance Constructor.\n");
+    Robot = r;
     supportlinks = s_links;
     polyscale = p_scale;
     polytrans = p_trans;
     balance_mode = BALANCE_SUPPORT_POLYGON;
+    RAVELOG_INFO("Initializing parameters.\n");
     InitializeBalanceParameters();
 }
 
 Balance::Balance(RobotBasePtr r, Vector g, std::vector<string> s_manips, std::vector<dReal> s_mus)
 {
-    robot = r;
+    Robot = r;
     gravity = g;
     support_manips = s_manips;
     support_mus = s_mus;
@@ -23,7 +25,7 @@ Balance::Balance(RobotBasePtr r, Vector g, std::vector<string> s_manips, std::ve
 
 NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
 {
-    RobotBase::ManipulatorPtr p_manip = robot->GetManipulator(manipname);
+    RobotBase::ManipulatorPtr p_manip = Robot->GetManipulator(manipname);
     Vector manip_dir = p_manip->GetLocalToolDirection();
 
     std::vector<Vector> support_points = GetSupportPoints(p_manip);
@@ -218,7 +220,7 @@ NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
     NEWMAT::Matrix a_stance_stacked(6 * num_manips, 6);
 
     for (int i = 0; i < num_manips; i++) {
-        GetAStance(robot->GetManipulator(support_manips[i])->GetTransform(), &a_stance_stacked, 6*i);
+        GetAStance(Robot->GetManipulator(support_manips[i])->GetTransform(), &a_stance_stacked, 6*i);
     }
 
     NEWMAT::Matrix mat = s_cones_diagonal * a_stance_stacked; // Dot product
@@ -379,13 +381,14 @@ Balance::Point2D Balance::compute2DPolygonCentroid(const Balance::Point2D* verti
 
 void Balance::GetSupportPolygon()
 {
+    RAVELOG_INFO("GetSupportPolygon");
     int numsupportlinks = supportlinks.size();
 
     std::vector<boost::shared_ptr<KinBody::Link::Geometry> >_listGeomProperties;
     std::vector<Vector> points;
     AABB bounds;
     //get points on trimeshes of support links
-    vector<KinBody::LinkPtr> vlinks = robot->GetLinks();
+    vector<KinBody::LinkPtr> vlinks = Robot->GetLinks();
     for(int i = 0 ; i < numsupportlinks; i++)
     {
         for(int j =0; j < vlinks.size(); j++)
@@ -479,7 +482,7 @@ void Balance::GetSupportPolygon()
 
 void Balance::RefreshBalanceParameters(std::vector<dReal> q_new)
 {
-    robot->SetDOFValues(q_new);
+    Robot->SetActiveDOFValues(q_new);
     
     if(balance_mode == BALANCE_SUPPORT_POLYGON)
     {

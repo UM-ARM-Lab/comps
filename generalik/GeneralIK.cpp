@@ -446,7 +446,7 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
 
     std::vector<dReal> temp;
 
-    _pRobot->CalculateActiveJacobian(_pRobot->GetActiveManipulator()->GetEndEffector()->GetIndex(), tEE.trans, temp);
+     _pRobot->CalculateActiveJacobian(_pRobot->GetActiveManipulator()->GetEndEffector()->GetIndex(), tEE.trans, temp);
     //PrintMatrix(_Jp0.Store(),3,_numdofs,"Jp0: ");
     memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
 
@@ -455,7 +455,6 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
     
     //PrintMatrix(_Jr0.Store(),3,_numdofs,"Jr0: ");
 
-    
     _TMtask = TransformMatrix(taskframe_in.inverse());
     _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
     _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
@@ -1120,6 +1119,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
 
+
             //RAVELOG_INFO("xerror: %f\n",x_error);
             if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
             {
@@ -1131,14 +1131,13 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             //only need to compute the jacobian once if there are joint limit problems
             if(bLimit == false)
             {
+
                 for(int i = 0; i < _targmanips.size();i++)
                 {
                     _pRobot->SetActiveManipulator(_targmanips[i]);
                     GetFullJacobian(_curtms[i],_targtms[i],Jtemp);
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
-
                 }
-
 
                 if(balance_mode != BALANCE_NONE)
                 {
@@ -1171,8 +1170,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     for(int k = 0; k <2; k++)
                           Jtemp2(k+1,badjointinds[j]+1) = 0;
             }
-
-
 
             if(x_error > stepsize)
                 magnitude = stepsize/x_error;
@@ -1304,7 +1301,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             //RAVELOG_INFO("stepnorm: %f   nullspacestepnorm: %f\n", step.NormFrobenius(), nullspacestep.NormFrobenius());
             if(bPRINT)
                 PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
-
 
             //add step and check for joint limits
             bLimit = false;
@@ -1531,7 +1527,10 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
     }
 
     if(repulsive_vector.lengthsqr3() != 0)
+    {
         repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/repulsive_vector.lengthsqr3());
+        cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
+    }
 
     //for each obstacle, find its geometry type
     //calculate distance between the control point and the obstacle

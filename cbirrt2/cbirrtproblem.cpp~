@@ -101,7 +101,10 @@ int CBirrtProblem::main(const std::string& cmd)
     string mycmd = cmd;
     char* p = strtok(&mycmd[0], delim);
     if( p != NULL )
-        _strRobotName = p;
+    {
+       _strRobotName = p;
+       cout<<"Robot Name: "<<_)strRobotName<<endl;
+    }
 
     std::vector<RobotBasePtr> robots;
     GetEnv()->GetRobots(robots);
@@ -183,10 +186,14 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
     bool bGetTime = false;             // from gettime
     bool bNoRot = false;               // from norot
     bool bReturnClosest = false;       // from returnclosest
+    bool bObstacleAvoidance = false;   // from obstacle avoidance
+    bool bCOG = false;                 // from balance
     TransformMatrix robot_tf;          // from robottm
     TransformMatrix temp_tf_matrix; // Used in maniptm
     Transform temp_tf;              // Used in maniptm
-    std::vector<int> obstacle_indices;	// from obstacles
+    std::vector<int> checkcollisionlink_indices;  // from checkcollisionlink
+    std::vector<int> checkselfcollisionlinkpair_indices;  // from checkselfcollisionlinkpair
+    std::vector<int> obstacle_indices;  // from obstacles
     Vector cogtarg;                     // from movecog
     int balance_mode = 0;               // from movecog
     std::vector<string> supportlinks;   // from supportlinks
@@ -271,30 +278,57 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             ikparams.push_back(temp_tf.rot.x); ikparams.push_back(temp_tf.rot.y); ikparams.push_back(temp_tf.rot.z); ikparams.push_back(temp_tf.rot.w);
             ikparams.push_back(temp_tf.trans.x); ikparams.push_back(temp_tf.trans.y); ikparams.push_back(temp_tf.trans.z);
         }
+        else if( stricmp(cmd.c_str(), "checkcollision") == 0 ) {
+            bObstacleAvoidance = true;
+            int numcheckcollisionlinks;
+            string tempstring;
+            sinput >> numcheckcollisionlinks;
+            for(int i = 0; i < numcheckcollisionlinks; i++)
+            {
+                sinput >> tempstring;
+                checkcollisionlink_indices.push_back(robot->GetLink(tempstring)->GetIndex());
+            }
+            std::sort(checkcollisionlink_indices.begin(),checkcollisionlink_indices.end());
+        }
+        else if( stricmp(cmd.c_str(), "checkselfcollision") == 0 ) {
+            bObstacleAvoidance = true;
+            int numcheckselfcollisionlinkpairs;
+            string tempstring_1;
+            string tempstring_2;
+            sinput >> numcheckselfcollisionlinkpairs;
+            for(int i = 0; i < numcheckselfcollisionlinkpairs; i++)
+            {
+                sinput >> tempstring_1;
+                sinput >> tempstring_2;
+                checkselfcollisionlinkpair_indices.push_back(robot->GetLink(tempstring_1)->GetIndex());
+                checkselfcollisionlinkpair_indices.push_back(robot->GetLink(tempstring_2)->GetIndex());
+            }
+        }
         else if( stricmp(cmd.c_str(), "obstacles") == 0 ) {
             int numobstacles;
             string tempstring;
             sinput >> numobstacles;
-            for(int i =0; i < numobstacles; i++)
+            for(int i = 0; i < numobstacles; i++)
             {
                 sinput >> tempstring;
-		std::vector<KinBodyPtr> bodies;
-		GetEnv()->GetBodies(bodies);
-		for(int j = 0; j < bodies.size(); j++)
-		{
+                std::vector<KinBodyPtr> bodies;
+                GetEnv()->GetBodies(bodies);
+                for(int j = 0; j < bodies.size(); j++)
+                {
                     if(stricmp(tempstring.c_str(),bodies[j]->GetName().c_str()) == 0)
-		    {
-			obstacle_indices.push_back(j);
-			break;
-		    }
-		}
+                    {
+                        obstacle_indices.push_back(j);
+                        break;
+                    }
+                }
             }
-	    std::sort(obstacle_indices.begin(),obstacle_indices.end());
+            std::sort(obstacle_indices.begin(),obstacle_indices.end());
         }
         else if( stricmp(cmd.c_str(), "movecog") == 0 ) {
             // TODO: Verify this description
             // This appears to the desired Center of Gravity position. Note that support-polygon stability checking is
             // not performed if this command is not provided.
+            bCOG = true;
             sinput >> cogtarg.x;
             sinput >> cogtarg.y;
             sinput >> cogtarg.z;
@@ -346,18 +380,31 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         }
     }
 
-    if(!obstacle_indices.empty())
+    if(bObstacleAvoidance)
     {
-	ikparams.push_back(1); //there is an obstacle
-	ikparams.push_back(obstacle_indices.size());
-	for(std::vector<int>::iterator it = obstacle_indices.begin(); it != obstacle_indices.end(); it++)
-	{
-	    ikparams.push_back(*it);
-	}
+        ikparams.push_back(1); //the robot should avoid collision, including self collision
+        
+        ikparams.push_back(checkcollisionlink_indices.size());
+        for(std::vector<int>::iterator it = checkcollisionlink_indices.begin(); it != checkcollisionlink_indices.end(); it++)
+        {
+            ikparams.push_back(*it);
+        }
+
+        ikparams.push_back((checkselfcollisionlinkpair_indices.size()/2));
+        for(std::vector<int>::iterator it = checkselfcollisionlinkpair_indices.begin(); it != checkselfcollisionlinkpair_indices.end(); it++)
+        {
+            ikparams.push_back(*it);
+        }
+
+        ikparams.push_back(obstacle_indices.size());
+        for(std::vector<int>::iterator it = obstacle_indices.begin(); it != obstacle_indices.end(); it++)
+        {
+            ikparams.push_back(*it);
+        }
     }
     else
     {
-        ikparams.push_back(0); //there is no obstacle
+        ikparams.push_back(0); //the robot need not avoid collision
     }
 
     ikparams.push_back(balance_mode);
@@ -388,6 +435,17 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         ikparams.push_back(gravity.x);
         ikparams.push_back(gravity.y);
         ikparams.push_back(gravity.z);
+
+        // Compute cogtarg as the mean position of the support links
+        if( !bCOG )
+        {
+            for(int i = 0; i < support_manips.size(); i++) {
+                Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
+                cogtarg += tf.trans;
+            }
+            cogtarg /= support_manips.size();
+        }
+
         GetGIWC(support_manips, support_mus, ikparams);
     }
 
@@ -593,7 +651,6 @@ bool CBirrtProblem::CheckSupport(ostream& sout, istream& sinput)
     }
 
     return true;
-
 
 }
 
@@ -1422,7 +1479,7 @@ int CBirrtProblem::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** poin
 void CBirrtProblem::compute_convex_hull(void)
 {  
 
-    int dim =2;  	              /* dimension of points */
+    int dim =2;                   /* dimension of points */
     int numpoints = 4;            /* number of points */
     coordT points[8] = {0, 0,  1, 0,  1, 1,  0, 1};           /* array of coordinates for each point */
     boolT ismalloc = false;           /* True if qhull should free points in qh_freeqhull() or reallocation */
@@ -1431,8 +1488,8 @@ void CBirrtProblem::compute_convex_hull(void)
                                  use NULL to skip qh_produce_output() */
     FILE *errfile= stderr;    /* error messages from qhull code */
     int exitcode;             /* 0 if no error from qhull */
-    facetT *facet;	          /* set by FORALLfacets */
-    int curlong, totlong;	  /* memory remaining after qh_memfreeshort */
+    facetT *facet;            /* set by FORALLfacets */
+    int curlong, totlong;     /* memory remaining after qh_memfreeshort */
 
     /* initialize dim, numpoints, points[], ismalloc here */
     exitcode= qh_new_qhull (dim, numpoints, points, ismalloc,

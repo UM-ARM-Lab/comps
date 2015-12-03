@@ -1,5 +1,5 @@
-#ifndef  ESPARAMETERS_H
-#define  ESPARAMETERS_H
+#ifndef  ELASTICSTRIPSPARAMETERS_H
+#define  ELASTICSTRIPSPARAMETERS_H
 
 /// class for passing parameters to cbirrt planner
 class ESParameters

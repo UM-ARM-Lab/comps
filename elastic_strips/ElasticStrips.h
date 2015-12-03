@@ -28,16 +28,16 @@ class PriorityTree
 	public:
 		PriorityTree()
 		{
-			PriorityNode JointLimit("JointLimit","JointLimit");
-			data.insert(std::pair<string,PriorityNode>(JointLimit.name,JointLimit));
+			// PriorityNode JointLimit("JointLimit","JointLimit");
+			// data.insert(std::pair<string,PriorityNode>(JointLimit.name,JointLimit));
 
-			PriorityNode Z("Z","JointLimit");
+			PriorityNode Z("ZRPY","ZRPY");
 			data.insert(std::pair<string,PriorityNode>(Z.name,Z));
 
-			PriorityNode XY("XY","Z");
+			PriorityNode XY("XY","ZRPY");
 			data.insert(std::pair<string,PriorityNode>(XY.name,XY));
 
-			PriorityNode ObstacleAvoidance("ObsAvoidance","Z");
+			PriorityNode ObstacleAvoidance("ObsAvoidance","ZRPY");
 			data.insert(std::pair<string,PriorityNode>(ObstacleAvoidance.name,ObstacleAvoidance));
 
 			PriorityNode Balance("Balance","ObsAvoidance");
@@ -47,10 +47,10 @@ class PriorityTree
 			data.insert(std::pair<string,PriorityNode>(Posture.name,Posture));
 		}
 
-		bool ConstructSubtree(std::vector<string> node_name, std::map<string,PriorityNode>& subtree)
+		bool ConstructSubtree(std::vector<string> node_name)
 		{
-			//JointLimit always exists, so needless to consider the situation with multiple tree top.
-			subtree.clear();
+			// Z always exists, so needless to consider the situation with multiple tree top.
+			std::map<string,PriorityNode> subtree;
 			for(std::vector<string>::iterator it = node_name.begin(); it != node_name.end(); it++)
 			{
 				subtree.insert((*data.find(*it)));
@@ -60,20 +60,22 @@ class PriorityTree
 			{
 				string curr_it_node_name = it->second.name;
 				string parent_name = it->second.parent;
-				while(subtree.count(parent_name) != 0)
+				while(subtree.count(parent_name) == 0)
 				{
-					if(parent_name == curr_it_node_name)
+                    if(parent_name == curr_it_node_name)
 					{
 						cerr<<"ERROR: Failed to generate subtree."<<endl;
 						return false;
 					}
 					curr_it_node_name = parent_name;
-					parent_name = data.find(curr_it_node_name)->second.name;
+					parent_name = data.find(curr_it_node_name)->second.parent;
 				}
 
 				it->second.parent = parent_name;
 
 			}
+
+            data = subtree;
 
 			return true;
 		}
@@ -90,19 +92,19 @@ class ElasticStrips : public ModuleBase
         RegisterCommand("RunElasticStrips",boost::bind(&ElasticStrips::RunElasticStrips,this,_1,_2),
                         "Run the Elastic Strips Planner");
 
-        _esEnv = penv;
         _priority_tree = PriorityTree();
 
     }
     virtual ~ElasticStrips() {}
 
-    int main(const std::string& cmd);
+    int RunElasticStrips(ostream& sout, istream& sinput);
+
+  private:
+
     void SetActiveRobots(const std::vector<RobotBasePtr >& robots);
 
-    int RunElasticStrips(ostream& sout, istream& sinput);
     void InitPlan(boost::shared_ptr<ESParameters> params);
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
-    // bool SmoothTrajectory(TrajectoryBasePtr ptraj);
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs,string link_name);
@@ -110,18 +112,17 @@ class ElasticStrips : public ModuleBase
 
     void GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point);
 
-    void UpdateZandXYJacobianandStep(Transform taskframe_in, int config_index);
+    void UpdateZRPYandXYJacobianandStep(Transform taskframe_in, int config_index);
     void UpdateCOGJacobianandStep(Transform taskframe_in);
     void UpdateOAJacobianandStep(Transform taskframe_in);
     void UpdatePCJacobianandStep(Transform taskframe_in);
 
-    NEWMAT::ColumnVector CalculateStep();
-
-  private:
-
     void QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi);
     int invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed);
     void RemoveBadJointJacobianCols(NEWMAT::Matrix& J);
+
+    NEWMAT::ColumnVector CalculateStep();
+    void PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char * statement);
 
     int _numdofs;
 
@@ -144,7 +145,7 @@ class ElasticStrips : public ModuleBase
     std::map<size_t,bool> stable_waypoint;
 
     std::map<size_t, std::map<string,int> > contact_consistent_region; // <waypoint index, <manip_name,cc manip position> >
-    std::vector< std::pair<string,Vector> > contact_consistent_manip_translation; // store the contact consistent point/translation in each iteration, index: traj index, <link/endeffector name, position of the link>
+    std::vector< std::pair<string,Vector> > contact_consistent_manip_translation; // store the contact consistent point/translation in each iteration, index: contact region index, <manip name, position of the link>
 
     NEWMAT::Matrix _Jp;
     NEWMAT::Matrix _Jp0;
@@ -170,8 +171,11 @@ class ElasticStrips : public ModuleBase
     NEWMAT::ColumnVector doa;
     
     NEWMAT::Matrix JZ;
-    NEWMAT::Matrix JZplus;
-    NEWMAT::ColumnVector dz;
+    NEWMAT::Matrix JRPY;
+
+    NEWMAT::Matrix JZRPY;
+    NEWMAT::Matrix JZRPYplus;
+    NEWMAT::ColumnVector dzrpy;
 
     NEWMAT::Matrix JXY;
     NEWMAT::Matrix JXYplus;
@@ -188,8 +192,8 @@ class ElasticStrips : public ModuleBase
     NEWMAT::SymmetricMatrix Moa;
     NEWMAT::SymmetricMatrix Moainv;
 
-    NEWMAT::SymmetricMatrix Mz;
-    NEWMAT::SymmetricMatrix Mzinv;
+    NEWMAT::SymmetricMatrix Mzrpy;
+    NEWMAT::SymmetricMatrix Mzrpyinv;
 
     NEWMAT::SymmetricMatrix Mxy;
     NEWMAT::SymmetricMatrix Mxyinv;
@@ -200,12 +204,18 @@ class ElasticStrips : public ModuleBase
     NEWMAT::SymmetricMatrix Mpc;
     NEWMAT::SymmetricMatrix Mpcinv;
 
+    dReal cxy = 0.01;
+    dReal czrpy = 0.01;
+    dReal ccog = 0.01;
+    dReal coa = 0.01;
+    dReal cpc = 0.01;
+
     NEWMAT::ColumnVector step;
 
 
     NEWMAT::DiagonalMatrix Regoa;
     NEWMAT::DiagonalMatrix Regxy;
-    NEWMAT::DiagonalMatrix Regz;
+    NEWMAT::DiagonalMatrix Regzrpy;
     NEWMAT::DiagonalMatrix Regcog;
     NEWMAT::DiagonalMatrix Regpc;
     
@@ -227,11 +237,14 @@ class ElasticStrips : public ModuleBase
 
     dReal epsilon = 0.001; //error tolerance for manipulator pose constraint
     dReal xy_error;
+    // dReal zrpy_error;
 
     bool bInCollision;
 
     bool bLimit;
     std::vector<int> badjointinds;
+
+    std::map<string,int> GetManipIndex;
 
 };
 

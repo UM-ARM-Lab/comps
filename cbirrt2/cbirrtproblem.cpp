@@ -101,7 +101,7 @@ int CBirrtProblem::main(const std::string& cmd)
     string mycmd = cmd;
     char* p = strtok(&mycmd[0], delim);
     if( p != NULL )
-        _strRobotName = p;
+       _strRobotName = p;
 
     std::vector<RobotBasePtr> robots;
     GetEnv()->GetRobots(robots);

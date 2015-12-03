@@ -30,8 +30,8 @@
     \brief Includes and function definitions for cbirrt problem/planner.
  */
 //This file contains includes of necessary headers and several useful macros and functions
-#ifndef BIRRT_PLANNER_STDAFX
-#define BIRRT_PLANNER_STDAFX
+#ifndef ELASTICSTRIPS_STDAFX
+#define ELASTICSTRIPS_STDAFX
 
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_DEPRECATE
@@ -171,7 +171,6 @@ inline std::wstring _ravembstowcs(const char* pstr)
 
 #include <rave/rave.h>
 #include <openrave/planningutils.h>
-#include <openrave/plugin.h>
 
 using namespace OpenRAVE;
 extern "C"
@@ -194,7 +193,6 @@ extern "C"
 #include <boost/array.hpp>
 #include <boost/make_shared.hpp>
 
-#include <iostream>
 #include <newmat/newmatap.h> 
 #include <newmat/newmatio.h>
 
