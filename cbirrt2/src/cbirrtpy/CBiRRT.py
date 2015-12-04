@@ -154,10 +154,11 @@ class CBiRRT(object):
         if jointgoals is not None:
             try:  # Assume it's a list of lists of goals
                 for jointgoal in jointgoals:
+                    assert isinstance(jointgoal, list)  # This is for the benefit of my IDE
                     cmd.append("jointgoals")
                     cmd.append(len(jointgoal))
                     cmd.extend(jointgoal)
-            except TypeError:  # Fall back to single list of goals
+            except (AssertionError, TypeError):  # Fall back to single list of goals
                 # "jointgoals" will have already been appended
                 cmd.append(len(jointgoals))
                 cmd.extend(jointgoals)
@@ -165,10 +166,11 @@ class CBiRRT(object):
         if jointstarts is not None:
             try:  # Assume it's a list of lists of starts
                 for jointstart in jointstarts:
+                    assert isinstance(jointstart, list)  # This is for the benefit of my IDE
                     cmd.append("jointstarts")
                     cmd.append(len(jointstart))
                     cmd.extend(jointstart)
-            except TypeError:  # Fall back to single list of starts
+            except (AssertionError, TypeError):  # Fall back to single list of starts
                 # "jointstarts" will have already been appended
                 cmd.append(len(jointstarts))
                 cmd.extend(jointstarts)

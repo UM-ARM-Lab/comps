@@ -49,9 +49,9 @@ class TSR(object):
                 world frame, specify 'NULL' or leave this argument blank
         :return:
         """
-        self.T0_w = T0_w if T0_w is not None else np.identity(4)
-        self.Tw_e = Tw_e if Tw_e is not None else np.identity(4)
-        self.Bw = Bw if Bw is not None else np.mat(np.zeros( (1, 12) ))
+        self.T0_w = np.mat(T0_w) if T0_w is not None else np.identity(4)
+        self.Tw_e = np.mat(Tw_e) if Tw_e is not None else np.identity(4)
+        self.Bw = np.mat(Bw) if Bw is not None else np.mat(np.zeros( (1, 12) ))
         self.manipindex = manipindex
         self.bodyandlink = bodyandlink
 
