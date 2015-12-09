@@ -1486,7 +1486,9 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
                     }
 
                     if(dist_to_obstacle < repulse_dist)
-                        repulsive_vector = repulsive_vector + repulsive_vector_component;
+                    {
+                        // repulsive_vector = repulsive_vector + repulsive_vector_component;
+                    }
 
                     if(dist_to_obstacle < shortest_dist)
                         shortest_dist = dist_to_obstacle;
@@ -1501,6 +1503,8 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
                     // string hhh;
                     // cin >> hhh;
                 }
+
+                repulsive_vector = Vector(0,0,1.0);
 
             }
         }
@@ -1529,7 +1533,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
     if(repulsive_vector.lengthsqr3() != 0)
     {
         repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/repulsive_vector.lengthsqr3());
-        cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
+        // cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
     }
 
     //for each obstacle, find its geometry type

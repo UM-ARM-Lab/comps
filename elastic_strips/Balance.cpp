@@ -495,6 +495,22 @@ void Balance::RefreshBalanceParameters(std::vector<dReal> q_new)
 
 }
 
+void Balance::RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links)
+{
+    Robot->SetActiveDOFValues(q_new);
+    supportlinks = s_links;
+    
+    if(balance_mode == BALANCE_SUPPORT_POLYGON)
+    {
+        GetSupportPolygon();
+    }
+    else if(balance_mode == BALANCE_GIWC)
+    {
+        GetGIWC();
+    }
+
+}
+
 void Balance::InitializeBalanceParameters()
 {
     if(balance_mode == BALANCE_SUPPORT_POLYGON)

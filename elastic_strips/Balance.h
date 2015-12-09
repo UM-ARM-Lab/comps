@@ -30,6 +30,7 @@ class Balance
 		};
 
 		void RefreshBalanceParameters(std::vector<dReal> q_new); // call it after the robot is in a new configuration, and before calling CheckSupport. Takes new config.
+		void RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links);
 		bool CheckSupport(Vector center);
     	
 	private:
