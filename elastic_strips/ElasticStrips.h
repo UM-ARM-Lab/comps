@@ -28,10 +28,11 @@ class ElasticStrips : public ModuleBase
     dReal TransformDifference(dReal * dx,Transform tm_ref, Transform tm_targ);
 
     void GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point);
+    void GetInternalVector(Vector& internal_vector, TrajectoryBasePtr ptraj, string control_link, size_t w);
 
     void UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_t w);
     void UpdateCOGJacobianandStep(Transform taskframe_in, size_t w);
-    void UpdateOAJacobianandStep(Transform taskframe_in, size_t w);
+    void UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w);
     void UpdatePCJacobianandStep(Transform taskframe_in, size_t w);
 
     void QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi);
@@ -124,6 +125,8 @@ class ElasticStrips : public ModuleBase
     dReal ccog = 1;
     dReal coa = 1;
     dReal cpc = 1;
+
+    dReal ce = 1;
 
 
     NEWMAT::DiagonalMatrix Regoa;

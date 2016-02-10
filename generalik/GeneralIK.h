@@ -150,6 +150,9 @@ private:
     NEWMAT::SymmetricMatrix Mbalperp;
     NEWMAT::SymmetricMatrix Mbalperpinv;
 
+    NEWMAT::DiagonalMatrix W;
+    NEWMAT::DiagonalMatrix Winv;
+
     std::vector<Transform> _curtms;
     int _numitr;
     dReal magnitude;

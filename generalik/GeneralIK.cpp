@@ -147,9 +147,33 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     std::vector<dReal> q_s(numdofs);
 
     for(int i = 0; i < numdofs; i++)
-        q_s[i] = q0[i];    
+        q_s[i] = q0[i];
 
+    //set joint velocity weight (the lower the faster)
+    W.ReSize(numdofs);
+    Winv.ReSize(numdofs);
+    W = 1.0;
+    Winv = 1.0;
+    // for(int i = 0; i < numdofs; i++)
+    // {
+    //     int DOF_index = _pRobot->GetActiveDOFIndices()[i];
+    //     string DOF_name = _pRobot->GetJoints()[DOF_index]->GetName();
 
+    //     if(DOF_name == "l_knee_pitch" || DOF_name == "l_ankle_pitch" || DOF_name == "l_hip_pitch")
+    //     {
+    //         W(i+1) = 0.1;
+    //     }
+    //     else if(DOF_name == "r_knee_pitch" || DOF_name == "r_ankle_pitch" || DOF_name == "r_hip_pitch")
+    //     {
+    //         W(i+1) = 0.1;
+    //     }
+    //     else
+    //     {
+    //         W(i+1) = 10.0;
+    //     }
+
+    //     Winv(i+1) = 1 / W(i+1);
+    // }
 
     //read in the ik targets
 
@@ -1181,6 +1205,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             Reg = 0.0001;
             Reg2 = 0.0001;
             M << (J*J.t()) + Reg;
+            // M << (J*Winv*J.t()) + Reg;
 
             invConditioningBound(10000,M,Minv);
 
@@ -1188,6 +1213,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             //PrintMatrix(Minv.Store(),_numtargdims,_numtargdims,"Minv: ");
 
             Jplus = J.t()*Minv;
+            // Jplus = Winv*J.t()*Minv;
             //PrintMatrix(Jplus.Store(),_numdofs,_numtargdims,"Jplus: ");
 
             //Add collision avoidance here
@@ -1342,6 +1368,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
 }
 
+
 // void GeneralIK::ControlPointSampling(std::multimap<string,Vector>& control_points)
 // {
 //     //std::vector<string> sampled_links = ['l_foot','l_shin','l_thigh','r_foot','r_shin','r_thigh','torso','chest','l_upper_arm','l_forearm','r_upper_arm','r_forearm','head'];
@@ -1487,7 +1514,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
 
                     if(dist_to_obstacle < repulse_dist)
                     {
-                        // repulsive_vector = repulsive_vector + repulsive_vector_component;
+                        repulsive_vector = repulsive_vector + repulsive_vector_component;
                     }
 
                     if(dist_to_obstacle < shortest_dist)
@@ -1504,7 +1531,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
                     // cin >> hhh;
                 }
 
-                repulsive_vector = Vector(0,0,1.0);
+                // repulsive_vector = Vector(0,0,1.0);
 
             }
         }
