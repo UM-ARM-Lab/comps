@@ -337,7 +337,6 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             sinput >> cogtarg.x;
             sinput >> cogtarg.y;
             sinput >> cogtarg.z;
-            balance_mode = 1;
         }
         else if(stricmp(cmd.c_str(), "supportlinks") == 0 ){
             // The links to use for support-polygon stability checking. Format is
@@ -350,6 +349,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
                 sinput >> tempstring;
                 supportlinks.push_back(tempstring);
             }
+            balance_mode = 1;
         }
         else if(stricmp(cmd.c_str(), "polyscale") == 0 ){
             // 3d vector to scale the support polygon for support-polygon stability checking. Intended to make it
