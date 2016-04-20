@@ -151,6 +151,9 @@ private:
     vector<KinBody::JointPtr> _limadj_joints; 
     vector<vector<dReal> > _limadj_lowers; 
     vector<vector<dReal> > _limadj_uppers;
+
+    std::map<string,NEWMAT::Matrix> _computed_contact_surface_cones;
+
 };
 
 #endif

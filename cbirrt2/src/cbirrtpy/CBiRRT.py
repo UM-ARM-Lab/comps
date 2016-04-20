@@ -310,7 +310,7 @@ class CBiRRT(object):
                     the robot balanced.
         :param list[float] movecog: The desired center of gravity of the robot as an [x, y, z] list. Support polygon
                     stability will not be performed if this parameter is not provided (optional)
-        :param list[str] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver
+        :param list[(str,(float,float,float))] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver, and repulsive vector direction.(if specified)
         :param list[string|rave.KinBody.Link] supportlinks: Links to use to calculate the robot's support polygon,
                     specified either as the link name or link object. Setting this parameter enables balance checking
                     using the robot's support polygon. (optional)
@@ -374,7 +374,14 @@ class CBiRRT(object):
         if obstacles is not None:
             cmd.append("obstacles")
             cmd.append(len(obstacles))
-            cmd.extend(rave_object_name(l) for l in obstacles)
+            for obs in obstacles:
+                cmd.append(obs[0])
+                if(obs[1] is None):
+                    cmd.extend([0,0,0])
+                else:
+                    cmd.append(obs[1][0])
+                    cmd.append(obs[1][1])
+                    cmd.append(obs[1][2])
 
         if movecog is not None:
             cmd.append("movecog")
@@ -468,7 +475,7 @@ class CBiRRT(object):
                     the robot balanced.
         :param list[float] movecog: The desired center of gravity of the robot as an [x, y, z] list. Support polygon
                     stability will not be performed if this parameter is not provided (optional)
-        :param list[str] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver
+        :param list[(str,(float,float,float))] obstacles: The KinBody name that are taken as obstacle in the GeneralIK solver, and repulsive vector direction.(if specified)
         :param list[string|rave.KinBody.Link] supportlinks: Links to use to calculate the robot's support polygon,
                     specified either as the link name or link object. Setting this parameter enables balance checking
                     using the robot's support polygon. (optional)
@@ -533,6 +540,18 @@ class CBiRRT(object):
             cmd.append("obstacles")
             cmd.append(len(obstacles))
             cmd.extend(rave_object_name(l) for l in obstacles)
+
+        # if obstacles is not None:
+        #     cmd.append("obstacles")
+        #     cmd.append(len(obstacles))
+        #     for obs in obstacles:
+        #         cmd.append(obs[0])
+        #         if(obs[1] is None):
+        #             cmd.extend([0,0,0])
+        #         else:
+        #             cmd.append(obs[1][0])
+        #             cmd.append(obs[1][1])
+        #             cmd.append(obs[1][2])
 
         if posturecontrol is not None:
             cmd.append("posturecontrol")

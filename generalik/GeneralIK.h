@@ -217,6 +217,7 @@ private:
     //used in obstacle avoidance
     EnvironmentBasePtr _pEnvironment;
     std::vector<KinBodyPtr> _pObstacle;
+    std::vector<Vector> obstacle_repulsive_vector;
     std::multimap<string,Vector> control_points; //<link_name,local translation>
     std::vector<std::pair<string,string> > self_collision_checking_pairs; //need another reading command from user input
     

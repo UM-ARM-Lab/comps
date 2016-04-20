@@ -175,7 +175,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
     EnvironmentMutex::scoped_lock lockenv(GetEnv()->GetMutex());
 
     RAVELOG_DEBUG("Starting General IK...\n");
-    RAVELOG_INFO("Checking ravelog_info\n");
+    // RAVELOG_INFO("Checking ravelog_info\n");
 
     // Parameters to populate from sinput
     dReal temp_r;                   // Used in nummanips
@@ -191,6 +191,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
     std::vector<int> checkcollisionlink_indices;  // from checkcollisionlink
     std::vector<int> checkselfcollisionlinkpair_indices;  // from checkselfcollisionlinkpair
     std::vector<int> obstacle_indices;  // from obstacles
+    std::vector< Vector > obstacle_repulsive_vector;
     Vector cogtarg;                     // from movecog
     int balance_mode = 0;               // from movecog
     std::vector<string> supportlinks;   // from supportlinks
@@ -318,8 +319,15 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
                         break;
                     }
                 }
+                Vector repulsive_vector;
+
+                sinput >> repulsive_vector.x;
+                sinput >> repulsive_vector.y;
+                sinput >> repulsive_vector.z;
+
+                obstacle_repulsive_vector.push_back(repulsive_vector);
             }
-            std::sort(obstacle_indices.begin(),obstacle_indices.end());
+            // std::sort(obstacle_indices.begin(),obstacle_indices.end());
         }
         else if( stricmp(cmd.c_str(), "movecog") == 0 ) {
             // TODO: Verify this description
@@ -394,9 +402,12 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         }
 
         ikparams.push_back(obstacle_indices.size());
-        for(std::vector<int>::iterator it = obstacle_indices.begin(); it != obstacle_indices.end(); it++)
+        for(int i = 0; i < obstacle_indices.size(); i++)
         {
-            ikparams.push_back(*it);
+            ikparams.push_back(obstacle_indices[i]);
+            ikparams.push_back(obstacle_repulsive_vector[i].x);
+            ikparams.push_back(obstacle_repulsive_vector[i].y);
+            ikparams.push_back(obstacle_repulsive_vector[i].z);
         }
     }
     else
@@ -442,8 +453,17 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             }
             cogtarg /= support_manips.size();
         }
+        ikparams.push_back(cogtarg.x);
+        ikparams.push_back(cogtarg.y);
+        ikparams.push_back(cogtarg.z);
+
+        // unsigned long before_GIWC = timeGetTime();
 
         GetGIWC(support_manips, support_mus, ikparams);
+
+        // int GIWC_timetaken = timeGetTime() - before_GIWC;
+
+        // RAVELOG_INFO("GIWC Got! (%d ms)\n",GIWC_timetaken);
     }
 
 
@@ -460,14 +480,18 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
 
     unsigned long starttime = timeGetTime();
 
-    for(vector<dReal>::iterator it = ikparams.begin(); it != ikparams.end(); it++)
-    {
-       cout<<*it<<' ';
-    }
-    cout<<endl;
+    // for(vector<dReal>::iterator it = ikparams.begin(); it != ikparams.end(); it++)
+    // {
+    //    cout<<*it<<' ';
+    // }
+    // cout<<endl;
 
     boost::shared_ptr<std::vector<dReal> > pqResult(new std::vector<dReal> );
     //PrintMatrix(&ikparams[0], 1, ikparams.size(), "ikparams");
+
+    // cout<<"Before IK Solver."<<endl;
+    // int k;
+    // k = getchar();
 
     if(_pIkSolver->Solve(IkParameterization(), q0, ikparams, false, pqResult) )
     {
@@ -482,10 +506,10 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         if(bGetTime)
             sout << timetaken << " ";
 
-        RAVELOG_INFO("Solution Found! (%d ms)\n",timetaken);
+        // RAVELOG_INFO("Solution Found! (%d ms)\n",timetaken);
         if(bExecute)
             robot->SetActiveDOFValues(qResult);
-        return true;
+        
     }
     else
     {
@@ -502,9 +526,14 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
 
         if(bGetTime)
             sout << timetaken << " ";
-        RAVELOG_INFO("No IK Solution Found (%d ms)\n",timetaken);
-        return true;
+        // RAVELOG_INFO("No IK Solution Found (%d ms)\n",timetaken);
     }
+
+    // cout<<"After IK Solver."<<endl;
+    // int l;
+    // l = getchar();
+
+    return true;
 
 }
 
@@ -1539,6 +1568,14 @@ void CBirrtProblem::GetSupportPointsForLink(RobotBase::LinkPtr p_link, Vector to
         return;
     }
 
+    if(strcmp(p_link->GetName().c_str(), "l_foot") != 0 &&
+       strcmp(p_link->GetName().c_str(), "r_foot") != 0 &&
+       strcmp(p_link->GetName().c_str(), "l_palm") != 0 &&
+       strcmp(p_link->GetName().c_str(), "r_palm") != 0)
+    {
+        return;
+    }
+
     // Iterates over the 8 combinations of (+ or -) for each of the 3 dimensions
     for (int neg_mask = 0; neg_mask < 8; neg_mask++) {
         Vector contact;
@@ -1561,6 +1598,7 @@ void CBirrtProblem::GetSupportPointsForLink(RobotBase::LinkPtr p_link, Vector to
 //            return; //! TEMP
         }
     }
+
 }
 
 /// Returns the support points of the given manipulator in the WORLD frame
@@ -1580,11 +1618,12 @@ std::vector<Vector> CBirrtProblem::GetSupportPoints(RobotBase::ManipulatorPtr p_
 
         // Transforms the tool_dir into the link frame
         GetSupportPointsForLink(attached_links[i], world_to_manip * attached_links[i]->GetTransform() * tool_dir, p_manip->GetTransform(), contacts);
+
     }
     return contacts;
 }
 
-const int CONE_DISCRETIZATION_RESOLUTION = 8;
+const int CONE_DISCRETIZATION_RESOLUTION = 4;
 void CBirrtProblem::GetFrictionCone(Vector& center, Vector& direction, dReal mu, NEWMAT::Matrix* mat, int offset_r, int offset_c, Transform temp_tf) {
     // This sets `a` (for axis) to the index of `direction` that is nonzero, sets `c` (cos) to the first index that
     // is zero, and `s` (sin) to the second that is zero. Formulas derived from a truth table.
@@ -1597,10 +1636,13 @@ void CBirrtProblem::GetFrictionCone(Vector& center, Vector& direction, dReal mu,
     dReal angle = 0;
     // NOTE 1-based indexing
     for (int i = 1; i <= CONE_DISCRETIZATION_RESOLUTION; i++) {
-        // a-colum will be -1 or 1. The -1 multiplication is because friction force occurs in the opposite direction
-        (*mat)(offset_r + i, offset_c + a) = center[a-1] + direction[a-1] * -1;
-        (*mat)(offset_r + i, offset_c + s) = center[s-1] + mu * sin(angle);
-        (*mat)(offset_r + i, offset_c + c) = center[c-1] + mu * cos(angle);
+        // a-column will be -1 or 1. The -1 multiplication is because friction force occurs in the opposite direction
+        // (*mat)(offset_r + i, offset_c + a) = center[a-1] + direction[a-1] * -1;
+        // (*mat)(offset_r + i, offset_c + s) = center[s-1] + round(mu * sin(angle) * 10000) * 0.0001;
+        // (*mat)(offset_r + i, offset_c + c) = center[c-1] + round(mu * cos(angle) * 10000) * 0.0001;
+        (*mat)(offset_r + i, offset_c + a) = direction[a-1] * -1;
+        (*mat)(offset_r + i, offset_c + s) = round(mu * sin(angle) * 10000) * 0.0001;
+        (*mat)(offset_r + i, offset_c + c) = round(mu * cos(angle) * 10000) * 0.0001;
         angle += step;
     }
 
@@ -1642,7 +1684,8 @@ void CBirrtProblem::GetASurf(RobotBase::ManipulatorPtr p_manip, Transform cone_t
 void CBirrtProblem::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) {
     // Note: This AStance computes the transpose of the AStance from the GIWC paper,
     // because of the way the cone representation is done here
-    TransformMatrix m = TransformMatrix(tf.inverse());
+    // TransformMatrix m = TransformMatrix(tf.inverse());
+    TransformMatrix m = TransformMatrix(tf);
 
     // Create -R matrix
     NEWMAT::Matrix negR_T(3, 3);
@@ -1650,7 +1693,7 @@ void CBirrtProblem::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) 
            << -m.m[1] << -m.m[5] << -m.m[9]
            << -m.m[2] << -m.m[6] << -m.m[10];
 
-    // Create cross-product-equivalent matrix of the transform's translation component
+    // Create the transpose of the cross-product-equivalent matrix of the transform's translation component
     NEWMAT::Matrix crossP_T(3, 3);
     crossP_T <<  0.0        <<  tf.trans.z << -tf.trans.y
              << -tf.trans.z <<  0.0        <<  tf.trans.x
@@ -1663,41 +1706,102 @@ void CBirrtProblem::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) 
     (*mat).SubMatrix(offset_r + 1, offset_r + 3, 4, 6) = negR_T * crossP_T;
     (*mat).SubMatrix(offset_r + 4, offset_r + 6, 1, 3) = 0.0;
     (*mat).SubMatrix(offset_r + 4, offset_r + 6, 4, 6) = negR_T;
+
+    // for(int i = 1; i <= mat->Nrows(); i++)
+    // {
+    //     for(int j = 1; j <= mat->Ncols(); j++)
+    //     {
+    //         (*mat)(i,j) = 0.001 * round((*mat)(i,j) * 1000.0);
+    //     }
+    // }
+    negR_T.ReleaseAndDelete();
+    crossP_T.ReleaseAndDelete();
 }
 
 NEWMAT::ReturnMatrix CBirrtProblem::GetSurfaceCone(string& manipname, dReal mu) {
-    RobotBase::ManipulatorPtr p_manip = robot->GetManipulator(manipname);
-    Vector manip_dir = p_manip->GetLocalToolDirection();
 
-    std::vector<Vector> support_points = GetSupportPoints(p_manip);
-    int num_points = support_points.size();
-
-    // Calculate combined friction cone matrix
-    int rows = CONE_DISCRETIZATION_RESOLUTION*num_points;
-    int cols = 3*num_points;
-    NEWMAT::Matrix f_cones_diagonal(rows, cols);
-    f_cones_diagonal = 0.0; // All non-filled spots should be 0
-
-    // Fill the diagonals
-    for (int i = 0; i < num_points; i++) {
-        GetFrictionCone(support_points[i], manip_dir, mu, &f_cones_diagonal, i*CONE_DISCRETIZATION_RESOLUTION, i*3, p_manip->GetTransform());
+    if(_computed_contact_surface_cones.count(manipname) != 0){
+        return _computed_contact_surface_cones.find(manipname)->second;
     }
+    else{
+        RobotBase::ManipulatorPtr p_manip = robot->GetManipulator(manipname);
+        Vector manip_dir = p_manip->GetLocalToolDirection();
 
-    // Calculate A_surf matrix
-    NEWMAT::Matrix a_surf_stacked(cols, 6); // TODO: Rename `cols` because it's the rows here
+        std::vector<Vector> support_points = GetSupportPoints(p_manip);
+        int num_points = support_points.size();
 
-    for (int i = 0; i < num_points; i++) {
-        // Cone transform has no rotation relative to the manipulator's transform and is translated by
-        // the vector contained in support_points
-        Transform cone_tf;
-        cone_tf.trans = support_points[i];
-        GetASurf(p_manip, cone_tf, &a_surf_stacked, 3*i);
+        // Calculate combined friction cone matrix
+        int rows = CONE_DISCRETIZATION_RESOLUTION*num_points;
+        int cols = 3*num_points;
+
+        NEWMAT::Matrix f_cones_diagonal(rows, cols);
+        f_cones_diagonal = 0.0; // All non-filled spots should be 0
+
+        // Fill the diagonals
+        for (int i = 0; i < num_points; i++) {
+            GetFrictionCone(support_points[i], manip_dir, mu, &f_cones_diagonal, i*CONE_DISCRETIZATION_RESOLUTION, i*3, p_manip->GetTransform());
+        }
+
+        // Calculate A_surf matrix
+        NEWMAT::Matrix a_surf_stacked(cols, 6); // TODO: Rename `cols` because it's the rows here
+
+        for (int i = 0; i < num_points; i++) {
+            // Cone transform has no rotation relative to the manipulator's transform and is translated by
+            // the vector contained in support_points
+            Transform cone_tf;
+            cone_tf.trans = support_points[i];
+            GetASurf(p_manip, cone_tf, &a_surf_stacked, 3*i);
+        }
+
+        NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
+
+        // omit redundant rows, useless, no redundant rows
+        dd_ErrorType err;
+        dd_MatrixPtr contact_span_cdd = dd_CreateMatrix(mat.Nrows(), mat.Ncols()+1);
+        for (int r = 0; r < mat.Nrows(); r++) {
+        // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
+            dd_set_si(contact_span_cdd->matrix[r][0], 0.0);
+            for (int c = 0; c < mat.Ncols(); c++) {
+                dd_set_si(contact_span_cdd->matrix[r][c+1], mat(r+1, c+1));
+            }
+        }
+
+        // dd_rowset redundant_rows = dd_RedundantRows(contact_span_cdd,&err);
+
+        // int redundant_rows_num = sizeof(redundant_rows) / sizeof(unsigned long);
+
+        // NEWMAT::Matrix reduced_mat(0,6);
+
+        // for(int i = 0; i < mat.Nrows(); i++)
+        // {
+        //     bool redundant = false;
+        //     for(int j = 0; j < redundant_rows_num; j++)
+        //     {
+        //         if(i == redundant_rows[j])
+        //         {
+        //             redundant = true;
+        //             break;
+        //         }
+                
+        //     }
+
+        //     if(!redundant)
+        //     {
+        //         reduced_mat &= mat.Row(i+1);
+        //     }
+        // }
+
+        // _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,reduced_mat));
+        _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,mat));
+
+        dd_FreeMatrix(contact_span_cdd);
+        f_cones_diagonal.ReleaseAndDelete();
+        a_surf_stacked.ReleaseAndDelete();
+        mat.Release();
+        // reduced_mat.Release();
+        // return reduced_mat;
+        return mat;
     }
-
-    NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
-
-    mat.Release();
-    return mat;
 }
 
 NEWMAT::ReturnMatrix CBirrtProblem::GetGIWCSpanForm(std::vector<std::string>& manip_ids, std::vector<dReal>& friction_coeffs) {
@@ -1709,6 +1813,8 @@ NEWMAT::ReturnMatrix CBirrtProblem::GetGIWCSpanForm(std::vector<std::string>& ma
         matrices.push_back(GetSurfaceCone(manip_ids[i], friction_coeffs[i]));
         total_rows += matrices.back().Nrows();
     }
+
+    // RAVELOG_INFO("num_manips: %d\n",num_manips);
 
     // Calculate combined surface cone matrix
     NEWMAT::Matrix s_cones_diagonal(total_rows, 6*num_manips);
@@ -1729,32 +1835,64 @@ NEWMAT::ReturnMatrix CBirrtProblem::GetGIWCSpanForm(std::vector<std::string>& ma
 
     NEWMAT::Matrix mat = s_cones_diagonal * a_stance_stacked; // Dot product
 
+    // RAVELOG_INFO("s_cones_diagonal Rows: %d, Col: %d\n",s_cones_diagonal.Nrows(),s_cones_diagonal.Ncols());
+    // cout<<s_cones_diagonal<<endl;
+    // RAVELOG_INFO("a_stance_stacked Rows: %d, Col: %d\n",a_stance_stacked.Nrows(),a_stance_stacked.Ncols());
+    // cout<<a_stance_stacked<<endl;
+    // RAVELOG_INFO("mat Rows: %d, Col: %d\n",mat.Nrows(),mat.Ncols());
+
+    s_cones_diagonal.ReleaseAndDelete();
+    a_stance_stacked.ReleaseAndDelete();
+    for(unsigned int i = 0; i < matrices.size(); i++)
+    {
+        matrices[i].ReleaseAndDelete();
+    }
     mat.Release();
     return mat;
 }
 
 void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dReal>& mus, std::vector<dReal>& ikparams) {
+    
+    // cout<<"Beginning of GetGIWC."<<endl;
+    // int a;
+    // a = getchar();
+    
     dd_set_global_constants();
+
+    // cout<<"dd_set_global_constraint."<<endl;
+    // int b;
+    // b = getchar();
+
     dd_ErrorType err;
 
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm(manip_ids, mus);
+    // RAVELOG_INFO("giwc_span_cdd Rows: %d, Col: %d\n",giwc_span.Nrows(),giwc_span.Ncols());
 
-    graphptrs.clear();
-    draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
+    // graphptrs.clear();
+    // draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
 
     dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
     giwc_span_cdd->representation = dd_Generator;
 
+    // cout<<"giwc_span_cdd."<<endl;
+    // int c;
+    // c = getchar();
+
     // TODO: Is there a better way than doing this?
     for (int r = 0; r < giwc_span.Nrows(); r++) {
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
-        dd_set_si(giwc_span_cdd->matrix[r][0], 0);
+        dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
         for (int c = 0; c < giwc_span.Ncols(); c++) {
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
-            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
+            // dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
+            dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * 10000));            
         }
     }
+
+    // cout<<"dd_set_si."<<endl;
+    // int d;
+    // d = getchar();
 
     dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
     if (err != dd_NoError) {
@@ -1763,7 +1901,20 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
         throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
     }
 
+    // cout<<"poly."<<endl;
+    // int e;
+    // e = getchar();
+
+    // unsigned long after_dd_matrix2poly2 = timeGetTime();
+    // RAVELOG_INFO("after_dd_matrix2poly2: %d\n",(after_dd_matrix2poly2-after_dd_set_si));
+
     dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
+
+    // RAVELOG_INFO("Ustance Size:(%d,%d)",giwc_face_cdd->rowsize,giwc_face_cdd->colsize);
+
+    // cout<<"giwc_face_cdd."<<endl;
+    // int f;
+    // f = getchar();
 
     // Add to ikparams
     ikparams.push_back(giwc_face_cdd->rowsize);
@@ -1775,10 +1926,27 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
         }
     }
 
+    giwc_span.ReleaseAndDelete();
     dd_FreeMatrix(giwc_face_cdd);
-    dd_FreeMatrix(giwc_span_cdd);
+    // cout<<"Free giwc_face_cdd."<<endl;
+    // int g;
+    // g = getchar();
+    
     dd_FreePolyhedra(poly);
+    // cout<<"Free poly."<<endl;
+    // int h;
+    // h = getchar();
+    
+    dd_FreeMatrix(giwc_span_cdd);
+    // cout<<"Free giwc_span_cdd."<<endl;
+    // int i;
+    // i = getchar();
+    
     dd_free_global_constants();
+    // cout<<"Free global constraint."<<endl;
+    // int j;
+    // j = getchar();
+
 }
 
 void CBirrtProblem::GetSupportPolygon(std::vector<string>& supportlinks, std::vector<dReal>& polyx, std::vector<dReal>& polyy, Vector polyscale, Vector polytrans)
@@ -1821,7 +1989,7 @@ void CBirrtProblem::GetSupportPolygon(std::vector<string>& supportlinks, std::ve
             }
         }
     }
-    RAVELOG_INFO("Num support points in to qhull: %d\n",points.size());
+    // RAVELOG_INFO("Num support points in to qhull: %d\n",points.size());
     std::vector<coordT> pointsin(points.size()*2);
     std::vector<RaveVector<float> > plotvecs(points.size());
     for(int i = 0; i < points.size();i++)
@@ -1838,7 +2006,7 @@ void CBirrtProblem::GetSupportPolygon(std::vector<string>& supportlinks, std::ve
     int numPointsOut = 0;
 
     convexHull2D(&pointsin[0], points.size(), &pointsOut, &numPointsOut);
-    RAVELOG_INFO("Num support points out of qhull:: %d\n",numPointsOut);
+    // RAVELOG_INFO("Num support points out of qhull:: %d\n",numPointsOut);
     
     std::vector<RaveVector<float> > tempvecs(numPointsOut +1);
     polyx.resize(numPointsOut);

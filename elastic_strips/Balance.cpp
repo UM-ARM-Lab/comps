@@ -230,11 +230,13 @@ NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
 }
 
 void Balance::GetGIWC()
-{
+{    
     dd_set_global_constants();
     dd_ErrorType err;
 
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm();
+
+
 
     dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
     giwc_span_cdd->representation = dd_Generator;
@@ -272,6 +274,7 @@ void Balance::GetGIWC()
     dd_FreeMatrix(giwc_span_cdd);
     dd_FreePolyhedra(poly);
     dd_free_global_constants();
+
 }
 
 int Balance::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut, int* numPointsOut)
