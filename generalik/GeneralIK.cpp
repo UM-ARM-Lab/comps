@@ -53,7 +53,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _pEnvironment->GetBodies(bodies);
     _pObstacle = bodies;
     
-    bPRINT = false;
+    bPRINT = true;
     bDRAW = false;
     bWRITETRAJ = false;
     bQUAT = false;
@@ -74,7 +74,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _E_rpy.ReSize(3,3);
     _E_rpy_inv.ReSize(3,3);
 
-    balancedx.ReSize(2);
+    balancedx.ReSize(3);
     Mbal.ReSize(2);
     Mbalinv.ReSize(2);
 
@@ -117,7 +117,8 @@ void GeneralIK::ResizeMatrices()
     _Jr_proper.ReSize(3,_numdofs);
     q_limits.ReSize(_numdofs);
 
-    Jtemp2.ReSize(2,_numdofs);
+    //Jtemp2.ReSize(2,_numdofs);
+    JtempBalance.ReSize(3,_numdofs);
     Jtemp3.ReSize(3,_numdofs);
 
     _Jr_quat.ReSize(4,_numdofs);
@@ -145,8 +146,12 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
 
     std::vector<dReal> q_s(numdofs);
 
-    for(int i = 0; i < numdofs; i++)
+    for(int i = 0; i < numdofs; i++){
         q_s[i] = q0[i];
+        if(bPRINT){
+                cout << "DOF " << i << " : " << q_s[i] << endl;
+        }
+    }
 
     //set joint velocity weight (the lower the faster)
     W.ReSize(numdofs);
@@ -296,6 +301,9 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         cogtarg.x = pFreeParameters[offset++];
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
+
+        if(bPRINT)
+            RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
 
         int rowsize = (int) pFreeParameters[offset++];
 
@@ -622,7 +630,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
         //PrintMatrix(_Jp.Store(),3,_numdofs,"Jp: ");
         //PrintMatrix(_Jr.Store(),3,_numdofs,"Jr: ");
 
-        J = J + ((*itlink)->GetMass()*(_Jp.Rows(1,2)));
+        J = J + ((*itlink)->GetMass()*(_Jp.Rows(1,3)));
 
 
         center += ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset() * (*itlink)->GetMass());
@@ -631,7 +639,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
 
     if( fTotalMass > 0 )
         center /= fTotalMass;
-    //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
+    //RAVELOG_INFO("mass: %f cog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
    
     J = J/fTotalMass;
 
@@ -847,7 +855,7 @@ int GeneralIK::invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricM
         if (maxEig > 100) { e = e/maxEig*100; if(bPRINT) RAVELOG_INFO("MAX EIG COND FIX!\n");}
         _S(i) = e;
     }
-    if(bPRINT) RAVELOG_INFO("notfixcount: %d\n",notfixcount);
+    //if(bPRINT) RAVELOG_INFO("notfixcount: %d\n",notfixcount);
     //this just reconstructs the A matrix with better conditioning
     //Afixed << _V * _S * _V.t();
     
@@ -1052,6 +1060,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     prev_error = 1000000.0;
     std::vector<dReal> q_s_backup = q_s;
     //initialize stepsize and epsilon
+    //maxstep = 0.1*_targtms.size();
     maxstep = 0.1*_targtms.size();
     stepsize = maxstep;
     epsilon = 0.001;
@@ -1083,13 +1092,11 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     bBalanceGradient = false;
     Vector perpvec;
 
-    for(int kk = 0; kk < 300; kk++)
+    for(int kk = 0; kk < 1000; kk++)
     {
         _numitr++;
 
         bLimit = false;
-
-        // cout<<"Iteration: "<<kk<<endl;
 
         _pRobot->SetActiveDOFValues(q_s);
         if(bWRITETRAJ)
@@ -1112,13 +1119,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
         x_error = TransformDifferenceVectorized(dx.Store(),_targtms,_curtms);
 
-        if(bPRINT)
-            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");
-
-
-        if(bPRINT)
-            RAVELOG_INFO("x error: %f\n",x_error);
-
         //if balance stuff is on, error will go up sometimes, so don't do this check
 
         if(balance_mode == BALANCE_NONE && (x_error >= prev_error || (prev_error - x_error < epsilon/10))&& x_error > epsilon)
@@ -1135,9 +1135,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         }
         else
             stepsize = maxstep;
-
-        if(bPRINT)
-            RAVELOG_INFO("stepsize: %f\n",stepsize);
 
         //don't let step size get too small
 
@@ -1165,7 +1162,6 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             }
         }
 
-
         if(bClearBadJoints)
         {
             badjointinds.resize(0);
@@ -1178,17 +1174,27 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             if(balance_mode != BALANCE_NONE)
             {
-               GetCOGJacobian(Transform(),Jtemp2,curcog);
+               GetCOGJacobian(Transform(),JtempBalance,curcog);
             }
 
+            double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
+                    +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
+                    +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
+            x_error += dist_target_com;
 
-            //RAVELOG_INFO("xerror: %f\n",x_error);
-            if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
+            if(bPRINT)
+                RAVELOG_INFO("x error: %f\n",x_error);
+
+            if(x_error < epsilon && 
+                            (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && 
+                            (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
             {
                 if(bPRINT)
                     RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
                 return true;
             }
+            if(bPRINT)
+                RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
 
             //only need to compute the jacobian once if there are joint limit problems
             if(bLimit == false)
@@ -1201,25 +1207,17 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
                 }
 
-                if(balance_mode != BALANCE_NONE)
-                {
-                   //the cog jacobian should only be 2 dimensional, b/c we don't care about z
-                   GetCOGJacobian(Transform(),Jtemp2,curcog);
-
-                   if(!CheckSupport(curcog))
-                   {
-                        bBalanceGradient = true;
-                        balancedx(1) = (curcog.x - cogtarg.x);
-                        balancedx(2) = (curcog.y - cogtarg.y);
-                   }
-                   else
-                   {
-                        balancedx(1) = 0;
-                        balancedx(2) = 0;
-                        bBalanceGradient = false;
-                   }
-                }
             }
+            if(balance_mode != BALANCE_NONE)
+            {
+               //the cog jacobian should only be 2 dimensional, b/c we don't care about z
+               GetCOGJacobian(Transform(),JtempBalance,curcog);
+               bBalanceGradient = true;
+               balancedx(1) = 1*(curcog.x - cogtarg.x);
+               balancedx(2) = 1*(curcog.y - cogtarg.y);
+               balancedx(3) = 1*(curcog.z - cogtarg.z);
+            }
+
 
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
@@ -1229,8 +1227,8 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             if(balance_mode != BALANCE_NONE)
             {
                 for(int j = 0; j < badjointinds.size(); j++)
-                    for(int k = 0; k <2; k++)
-                          Jtemp2(k+1,badjointinds[j]+1) = 0;
+                    for(int k = 0; k <3; k++)
+                          JtempBalance(k+1,badjointinds[j]+1) = 0;
             }
 
             if(x_error > stepsize)
@@ -1239,7 +1237,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 magnitude = 1;
 
             NEWMAT::DiagonalMatrix Reg(_numtargdims);
-            NEWMAT::DiagonalMatrix Reg2(Jtemp2.Nrows());
+            NEWMAT::DiagonalMatrix Reg2(JtempBalance.Nrows());
             Reg = 0.0001;
             Reg2 = 0.0001;
             M << (J*J.t()) + Reg;
@@ -1296,7 +1294,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     for(std::map<string,Vector>::iterator ctrl_it = control_points_in_collision.begin(); ctrl_it != control_points_in_collision.end(); ctrl_it++)
                     {
                         Jtemp3 &= control_point_jacobian.find(ctrl_it->first)->second;
-                        repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
+                       repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
                         repulsive_vector_column(point_index*3+2) = control_point_repulsive_vector.find(ctrl_it->first)->second.y;
                         repulsive_vector_column(point_index*3+3) = control_point_repulsive_vector.find(ctrl_it->first)->second.z;
                         point_index++;
@@ -1323,10 +1321,10 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             if(bBalanceGradient)
             {
-                Mbal << (Jtemp2*Jtemp2.t()) + Reg2;
+                Mbal << (JtempBalance*JtempBalance.t()) + Reg2;
                 invConditioningBound(10000,Mbal,Mbalinv);
 
-                NEWMAT::Matrix Jtemp2plus = Jtemp2.t()*Mbalinv;
+                NEWMAT::Matrix JtempBalancePlus = JtempBalance.t()*Mbalinv;
 
                 //do ik, then move toward balance in null space
                 if(bOBSTACLE_AVOIDANCE && !control_points_in_collision.empty())
@@ -1337,7 +1335,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 }
                 else
                 {
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*Jtemp2plus*(1*balancedx);
+                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*JtempBalancePlus*(1*balancedx);
                 }
                 
             }
@@ -1355,6 +1353,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             step = magnitude*Jplus*(dx) + nullspacestep;
 
+            if(bPRINT)
+                RAVELOG_INFO("magnitude: %f stepsize: %f maxstep: %f\n",magnitude,stepsize,maxstep);
+
             // cout<<"step: "<<endl;
             // cout<<step.t()<<endl;
             // cout<<"pose constraint step:"<<endl;
@@ -1367,8 +1368,8 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             // cin>>hhh;
 
             //RAVELOG_INFO("stepnorm: %f   nullspacestepnorm: %f\n", step.NormFrobenius(), nullspacestep.NormFrobenius());
-            if(bPRINT)
-                PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
+            //if(bPRINT)
+                //PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
 
             //add step and check for joint limits
             bLimit = false;
@@ -1401,7 +1402,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
 
         if(bPRINT)
-            RAVELOG_INFO("after limits\n");
+            RAVELOG_INFO("--------------- end iteration %d ----------------\n",kk);
 
     }
 

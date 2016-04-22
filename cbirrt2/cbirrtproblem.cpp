@@ -447,6 +447,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         // Compute cogtarg as the mean position of the support links
         if( !bCOG )
         {
+            RAVELOG_INFO("Recompute cogtarg! \n");
             for(int i = 0; i < support_manips.size(); i++) {
                 Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
                 cogtarg += tf.trans;
@@ -463,12 +464,16 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
 
         // int GIWC_timetaken = timeGetTime() - before_GIWC;
 
-        // RAVELOG_INFO("GIWC Got! (%d ms)\n",GIWC_timetaken);
+        RAVELOG_INFO("GIWC cog    : %f %f %f! \n",cogtarg.x,cogtarg.y,cogtarg.z);
+        RAVELOG_INFO("GIWC gravity: %f %f %f! \n",gravity.x,gravity.y,gravity.z);
     }
 
 
     std::vector<dReal> q0(robot->GetActiveDOF());
     robot->GetActiveDOFValues(q0);
+    //for(int i = 0; i < robot->GetActiveDOF(); i++){
+    //    cout << "CBDOF " << i << " : " << q0[i] << endl;
+    //}
     
     std::vector<dReal> qResult(robot->GetActiveDOF());
 
@@ -506,7 +511,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         if(bGetTime)
             sout << timetaken << " ";
 
-        // RAVELOG_INFO("Solution Found! (%d ms)\n",timetaken);
+        RAVELOG_INFO("Solution Found! (%d ms)\n",timetaken);
         if(bExecute)
             robot->SetActiveDOFValues(qResult);
         

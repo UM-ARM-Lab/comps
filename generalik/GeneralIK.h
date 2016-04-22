@@ -134,6 +134,7 @@ private:
     NEWMAT::Matrix Jtrans;
     NEWMAT::Matrix Jtemp;
     NEWMAT::Matrix Jtemp2;
+    NEWMAT::Matrix JtempBalance; //for balance gradient XYZ
     NEWMAT::Matrix Jtemp3; //for obstacle avoidance
     NEWMAT::Matrix Jplus;
     NEWMAT::ColumnVector dx;
