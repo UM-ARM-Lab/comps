@@ -29,6 +29,7 @@
 /** \file GeneralIK.cpp
     \brief Implements the generalik class.
  */
+#include <algorithm>
 #include "stdafx.h"
 #include "GeneralIK.h"
 
@@ -53,7 +54,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _pEnvironment->GetBodies(bodies);
     _pObstacle = bodies;
     
-    bPRINT = true;
+    bPRINT = false;
     bDRAW = false;
     bWRITETRAJ = false;
     bQUAT = false;
@@ -1092,7 +1093,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     bBalanceGradient = false;
     Vector perpvec;
 
-    for(int kk = 0; kk < 30; kk++)
+    for(int kk = 0; kk < 1000; kk++)
     {
         _numitr++;
 
@@ -1177,12 +1178,15 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),JtempBalance,curcog);
             }
 
-            //double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
-            //        +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
-            //        +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
+            double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
+                    +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
+                    +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
+            if(dist_target_com > 0.01){
+                    x_error += dist_target_com;
+            }
 
             if(bPRINT){
-                RAVELOG_INFO("x error: %f\n",x_error);
+                RAVELOG_INFO("x error: %f dist cog: %f\n",x_error,dist_target_com);
             }
 
             if(x_error < epsilon && 
@@ -1207,28 +1211,42 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     GetFullJacobian(_curtms[i],_targtms[i],Jtemp);
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
                 }
-                if(balance_mode != BALANCE_NONE)
-                {
-                    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
-                    GetCOGJacobian(Transform(),JtempBalance,curcog);
-                    //bBalanceGradient = true;
-                    //x_error += dist_target_com;
-                    //balancedx(1) = 1*(curcog.x - cogtarg.x);
-                    //balancedx(2) = 1*(curcog.y - cogtarg.y);
-                    //balancedx(3) = 1*(curcog.z - cogtarg.z);
-                    if(!CheckSupport(curcog)){
-                        bBalanceGradient = true;
-                        balancedx(1) = (curcog.x - cogtarg.x);
-                        balancedx(2) = (curcog.y - cogtarg.y);
-                        balancedx(3) = (curcog.z - cogtarg.z);
-                    }else{
-                        bBalanceGradient = false;
-                        balancedx(1) = 0;
-                        balancedx(2) = 0;
-                        balancedx(3) = 0;
-                    }
-                }
+                //if(balance_mode != BALANCE_NONE)
+                //{
+                //    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
+                //    GetCOGJacobian(Transform(),JtempBalance,curcog);
+                //    //bBalanceGradient = true;
+                //    //x_error += dist_target_com;
+                //    //balancedx(1) = 1*(curcog.x - cogtarg.x);
+                //    //balancedx(2) = 1*(curcog.y - cogtarg.y);
+                //    //balancedx(3) = 1*(curcog.z - cogtarg.z);
+                //    if(!CheckSupport(curcog)){
+                //        bBalanceGradient = true;
+                //        balancedx(1) = (curcog.x - cogtarg.x);
+                //        balancedx(2) = (curcog.y - cogtarg.y);
+                //        //balancedx(3) = (curcog.z - cogtarg.z);
+                //    }else{
+                //        bBalanceGradient = false;
+                //        balancedx(1) = 0;
+                //        balancedx(2) = 0;
+                //        balancedx(3) = 0;
+                //    }
+                //}
 
+            }
+            if(balance_mode != BALANCE_NONE)
+            {
+                //the cog jacobian should only be 2 dimensional, b/c we don't care about z
+                GetCOGJacobian(Transform(),JtempBalance,curcog);
+                //bBalanceGradient = true;
+                x_error += dist_target_com;
+                //balancedx(1) = 1*(curcog.x - cogtarg.x);
+                //balancedx(2) = 1*(curcog.y - cogtarg.y);
+                //balancedx(3) = 1*(curcog.z - cogtarg.z);
+                bBalanceGradient = true;
+                balancedx(1) = 1*(curcog.x - cogtarg.x);
+                balancedx(2) = 1*(curcog.y - cogtarg.y);
+                balancedx(3) = 1*(curcog.z - cogtarg.z);
             }
 
             //eliminate bad joint columns from the Jacobian
