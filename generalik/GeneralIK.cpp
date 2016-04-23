@@ -1083,16 +1083,16 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     //     ControlPointSampling(control_points);
     // }
 
-    // for(std::vector<dReal>::iterator it = q_s.begin(); it != q_s.end(); it++)
-    // {
-    //     std::cout<<*it<<' ';
-    // }
-    // std::cout<<std::endl;
+    for(std::vector<dReal>::iterator it = q_s.begin(); it != q_s.end(); it++)
+    {
+        std::cout<<*it<<' ';
+    }
+    std::cout<<std::endl;
 
     bBalanceGradient = false;
     Vector perpvec;
 
-    for(int kk = 0; kk < 1000; kk++)
+    for(int kk = 0; kk < 30; kk++)
     {
         _numitr++;
 
@@ -1177,13 +1177,13 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),JtempBalance,curcog);
             }
 
-            double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
-                    +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
-                    +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
-            x_error += dist_target_com;
+            //double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
+            //        +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
+            //        +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
 
-            if(bPRINT)
+            if(bPRINT){
                 RAVELOG_INFO("x error: %f\n",x_error);
+            }
 
             if(x_error < epsilon && 
                             (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && 
@@ -1193,8 +1193,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
                 return true;
             }
-            if(bPRINT)
+            if(bPRINT){
                 RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
+            }
 
             //only need to compute the jacobian once if there are joint limit problems
             if(bLimit == false)
@@ -1206,18 +1207,29 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     GetFullJacobian(_curtms[i],_targtms[i],Jtemp);
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
                 }
+                if(balance_mode != BALANCE_NONE)
+                {
+                    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
+                    GetCOGJacobian(Transform(),JtempBalance,curcog);
+                    //bBalanceGradient = true;
+                    //x_error += dist_target_com;
+                    //balancedx(1) = 1*(curcog.x - cogtarg.x);
+                    //balancedx(2) = 1*(curcog.y - cogtarg.y);
+                    //balancedx(3) = 1*(curcog.z - cogtarg.z);
+                    if(!CheckSupport(curcog)){
+                        bBalanceGradient = true;
+                        balancedx(1) = (curcog.x - cogtarg.x);
+                        balancedx(2) = (curcog.y - cogtarg.y);
+                        balancedx(3) = (curcog.z - cogtarg.z);
+                    }else{
+                        bBalanceGradient = false;
+                        balancedx(1) = 0;
+                        balancedx(2) = 0;
+                        balancedx(3) = 0;
+                    }
+                }
 
             }
-            if(balance_mode != BALANCE_NONE)
-            {
-               //the cog jacobian should only be 2 dimensional, b/c we don't care about z
-               GetCOGJacobian(Transform(),JtempBalance,curcog);
-               bBalanceGradient = true;
-               balancedx(1) = 1*(curcog.x - cogtarg.x);
-               balancedx(2) = 1*(curcog.y - cogtarg.y);
-               balancedx(3) = 1*(curcog.z - cogtarg.z);
-            }
-
 
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
@@ -1294,7 +1306,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     for(std::map<string,Vector>::iterator ctrl_it = control_points_in_collision.begin(); ctrl_it != control_points_in_collision.end(); ctrl_it++)
                     {
                         Jtemp3 &= control_point_jacobian.find(ctrl_it->first)->second;
-                       repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
+                        repulsive_vector_column(point_index*3+1) = control_point_repulsive_vector.find(ctrl_it->first)->second.x;
                         repulsive_vector_column(point_index*3+2) = control_point_repulsive_vector.find(ctrl_it->first)->second.y;
                         repulsive_vector_column(point_index*3+3) = control_point_repulsive_vector.find(ctrl_it->first)->second.z;
                         point_index++;
