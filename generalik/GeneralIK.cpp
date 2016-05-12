@@ -1084,11 +1084,13 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     //     ControlPointSampling(control_points);
     // }
 
-    for(std::vector<dReal>::iterator it = q_s.begin(); it != q_s.end(); it++)
-    {
-        std::cout<<*it<<' ';
+    if (bPRINT){
+            for(std::vector<dReal>::iterator it = q_s.begin(); it != q_s.end(); it++)
+            {
+                std::cout<<*it<<' ';
+            }
+            std::cout<<std::endl;
     }
-    std::cout<<std::endl;
 
     bBalanceGradient = false;
     Vector perpvec;
@@ -1181,7 +1183,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
                     +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
                     +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
-            if(dist_target_com > 0.01){
+            if(dist_target_com > 0.05){
                     x_error += dist_target_com;
             }
 
@@ -1217,14 +1219,11 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 //    GetCOGJacobian(Transform(),JtempBalance,curcog);
                 //    //bBalanceGradient = true;
                 //    //x_error += dist_target_com;
-                //    //balancedx(1) = 1*(curcog.x - cogtarg.x);
-                //    //balancedx(2) = 1*(curcog.y - cogtarg.y);
-                //    //balancedx(3) = 1*(curcog.z - cogtarg.z);
                 //    if(!CheckSupport(curcog)){
                 //        bBalanceGradient = true;
                 //        balancedx(1) = (curcog.x - cogtarg.x);
                 //        balancedx(2) = (curcog.y - cogtarg.y);
-                //        //balancedx(3) = (curcog.z - cogtarg.z);
+                //        balancedx(3) = (curcog.z - cogtarg.z);
                 //    }else{
                 //        bBalanceGradient = false;
                 //        balancedx(1) = 0;
@@ -1236,16 +1235,17 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             }
             if(balance_mode != BALANCE_NONE)
             {
-                //the cog jacobian should only be 2 dimensional, b/c we don't care about z
                 GetCOGJacobian(Transform(),JtempBalance,curcog);
-                //bBalanceGradient = true;
-                x_error += dist_target_com;
+                if(dist_target_com > 0.01){
+                        x_error += dist_target_com;
+                }
                 //balancedx(1) = 1*(curcog.x - cogtarg.x);
                 //balancedx(2) = 1*(curcog.y - cogtarg.y);
                 //balancedx(3) = 1*(curcog.z - cogtarg.z);
                 bBalanceGradient = true;
                 balancedx(1) = 1*(curcog.x - cogtarg.x);
                 balancedx(2) = 1*(curcog.y - cogtarg.y);
+                //balancedx(2) = 0;
                 balancedx(3) = 1*(curcog.z - cogtarg.z);
             }
 
