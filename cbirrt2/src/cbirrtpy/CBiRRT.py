@@ -452,7 +452,7 @@ class CBiRRT(object):
                 return result
 
 
-    def RunElasticStrips(self, manips=None, trajectory=None, gettime=None, desiredmanippose=None, checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, posturecontrol=None, movecog=None,
+    def RunElasticStrips(self, manips=None, trajectory=None, gettime=None, desiredmanippose=None, contact_manips=None, checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, posturecontrol=None, movecog=None,
                     supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, printcommand=False):
         """
         Get an IK solution with GeneralIK. In addition to these parameters, you can specify which DOF GeneralIK will
@@ -517,13 +517,23 @@ class CBiRRT(object):
         if gettime is not None:
             cmd.append("gettime")
 
+        if contact_manips is not None:
+            for i,manips in enumerate(contact_manips):
+                cmd.append("contact_manips")
+                cmd.append(i)
+                cmd.append(len(manips))
+                for manip in manips:
+                    cmd.append(manip)
+
         if desiredmanippose is not None:
-            for poses in desiredmanippose:
+            for waypoints in desiredmanippose:
                 cmd.append("desiredmanippose")
-                cmd.append(len(poses))
-                for p,tm in poses:
-                    cmd.append(p)
-                    cmd.append(SerializeTransform(tm))
+                cmd.append(waypoints[0][0]) # index
+                cmd.append(len(waypoints))
+                for wp in waypoints:
+                    cmd.append(wp[1])
+                    cmd.append(wp[2])
+                    cmd.append(SerializeTransform(wp[3]))
 
         if checkcollisionlink is not None:
             cmd.append("checkcollision")

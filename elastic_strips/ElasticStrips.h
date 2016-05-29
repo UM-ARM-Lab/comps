@@ -22,6 +22,7 @@ class ElasticStrips : public ModuleBase
 
     void InitPlan(boost::shared_ptr<ESParameters> params);
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
+    void LoadContactRegions(); // new elastic strips
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs,string manip_name);
@@ -51,6 +52,8 @@ class ElasticStrips : public ModuleBase
     std::stringstream _outputstream;
 
     boost::shared_ptr<ESParameters> _parameters;
+
+    std::vector<ContactRegion> _contact_regions;
 
     string _strRobotName; ///< name of the active robot
 

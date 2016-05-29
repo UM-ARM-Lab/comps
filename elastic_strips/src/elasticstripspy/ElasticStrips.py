@@ -211,7 +211,7 @@ class ElasticStrips(object):
     #             return result
 
 
-    def RunElasticStrips(self, manips=None, trajectory=None, gettime=None, desiredmanippose=None, checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, posturecontrol=None,
+    def RunElasticStrips(self, manips=None, trajectory=None, gettime=None, contact_manips=None, desiredmanippose=None, checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, posturecontrol=None,
                     supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, printcommand=False):
         """
         Get an IK solution with GeneralIK. In addition to these parameters, you can specify which DOF GeneralIK will
@@ -278,6 +278,14 @@ class ElasticStrips(object):
 
         if gettime is not None:
             cmd.append("gettime")
+
+        if contact_manips is not None:
+            for i,manips in enumerate(contact_manips):
+                cmd.append("contact_manips")
+                cmd.append(i)
+                cmd.append(len(manips))
+                for manip in manips:
+                    cmd.append(manip)
 
         if desiredmanippose is not None:
             for waypoints in desiredmanippose:

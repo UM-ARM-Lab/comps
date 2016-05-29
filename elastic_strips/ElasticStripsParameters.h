@@ -26,6 +26,8 @@ class ESParameters
         map<size_t, map<string,pair<dReal,Transform> > > _desired_manip_pose; //<traj index, <link name, link transform> >
         map<string,Transform> _posture_control; //<link name,link transform>
 
+        map<size_t, vector<string> > _contact_manips; // <traj_index,contact manipulators>
+
         bool bOBSTACLE_AVOIDANCE;
         bool bPOSTURE_CONTROL;
         BalanceMode balance_mode;

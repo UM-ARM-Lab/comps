@@ -208,6 +208,7 @@ enum PlannerState
 #include "Balance.h"
 #include "ElasticStripsParameters.h"
 #include "ElasticStrips.h"
+#include "ContactRegion.h"
 
 
 class DoubleVectorToFloatVector : public vector<float> {

@@ -216,6 +216,22 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             params->_desired_manip_pose.insert(std::pair<size_t, std::map<string,std::pair<dReal,Transform> > >(temp_index,temp_manip_pose));
 
         }
+        else if(stricmp(cmd.c_str(), "contact_manips") == 0){
+            int temp_index;
+            int contact_manip_num;
+            string manip_name;
+            sinput >> temp_index;
+            sinput >> contact_manip_num;
+            std::vector<string> contact_manip;
+
+            for(int i = 0; i < contact_manip_num; i++)
+            {
+                sinput >> manip_name;
+                contact_manip.push_back(manip_name);
+            }
+
+            params->_contact_manips.insert(std::pair<size_t, std::vector<string> >(temp_index,contact_manip))
+        }
         else if(stricmp(cmd.c_str(), "checkcollision") == 0) {
             params->bOBSTACLE_AVOIDANCE = true;
             int numcheckcollisionlinks;
@@ -410,6 +426,39 @@ Transform ElasticStrips::ForwardKinematics(std::vector<dReal> qs,string manip_na
     return _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second]->GetTransform();
 }
 
+void ElasticStrips::LoadContactRegions()
+{
+    std::ifstream f_contact_region;
+    f_contact_region.open("../../escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
+    string data_string;
+    while(getline(f_contact_region,data_string))
+    {
+        std::vector<float> data_vector;
+        // Build an istream that holds the input string
+        std::istringstream iss(data_string);
+
+        // Iterate over the istream, using >> to grab floats
+        // and push_back to store them in the vector
+        std::copy(std::istream_iterator<float>(iss),std::istream_iterator<float>(),std::back_inserter(data_vector));
+
+        Vector contact_position;
+        Vector contact_normal;
+        float contact_radius;
+
+        contact_position.x = data_vector[0];
+        contact_position.y = data_vector[1];
+        contact_position.z = data_vector[2];
+
+        contact_normal.x = data_vector[3];
+        contact_normal.y = data_vector[4];
+        contact_normal.z = data_vector[5];
+
+        contact_radius = data_vector[6];
+
+        _contact_regions.push_back(ContactRegion(contact_position,contact_normal,contact_radius));
+    }
+}
+
 void ElasticStrips::FindContactRegions()
 {
     for(map<size_t, map<string,std::pair<dReal,Transform> > >::iterator dmp_it = _parameters->_desired_manip_pose.begin(); dmp_it != _parameters->_desired_manip_pose.end(); dmp_it++) // all contact regions
@@ -548,6 +597,8 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
     //Group the contact regions
     FindContactRegions();
 
+    //Load all contact regions
+    LoadContactRegions();
                 
     balance_step.ReSize(_numdofs);
     balance_step = 0;
@@ -1268,6 +1319,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             if(_parameters->balance_mode != BALANCE_NONE)
                 balance_checker.RefreshBalanceParameters(qs);
 
+            // reset waypoint stability state 
             if(stable_waypoint.find(w)->second == true)
             {
                 // ntraj->Insert(w,qs,_esRobot->GetActiveConfigurationSpecification());
