@@ -459,6 +459,48 @@ void ElasticStrips::LoadContactRegions()
     }
 }
 
+void ElasticStrips::FindNearestContactRegion(TrajectoryBasePtr ptraj)
+{
+    std::vector< std::map<string,ContactRegion> > temp_nearest_contact_regions(ptraj->GetNumWaypoints());
+    for(unsigned int w = 0; w < ptraj->GetNumWaypoints(); w++)
+    {
+        std::vector<dReal> qt;
+        ptraj->GetWaypoint(w,qt);
+
+        std::vector<string> manips_name = _parameters->_contact_manips.find(w).second;
+
+        for(std::vector<string>::iterator mn_it = manips_name.begin(); mn_it != manips_name.end(); mn_it++)
+        {
+            string name = *mn_it;
+            float nearest_dist = 9999.0;
+            ContactRegion nearest_contact_region;
+            Transform end_effector_transform = ForwardKinematics(qt,name);
+
+            for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
+            {
+                float dist = cr_it->DistToContactRegion(name,end_effector_transform);
+
+                if(dist < nearest_dist)
+                {
+                    nearest_dist = dist;
+                    nearest_contact_region = *cr_it;
+                }
+
+                if(nearest_dist == 0.0)
+                {
+                    break;
+                }
+            }
+
+            temp_nearest_contact_regions[w].insert(std::pair<string,ContactRegion>(name,nearest_contact_region));
+
+        }
+
+    }
+
+    nearest_contact_regions = temp_nearest_contact_regions;
+}
+
 void ElasticStrips::FindContactRegions()
 {
     for(map<size_t, map<string,std::pair<dReal,Transform> > >::iterator dmp_it = _parameters->_desired_manip_pose.begin(); dmp_it != _parameters->_desired_manip_pose.end(); dmp_it++) // all contact regions
@@ -595,11 +637,39 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
     _parameters = params;
 
     //Group the contact regions
-    FindContactRegions();
+    // FindContactRegions();
 
     //Load all contact regions
     LoadContactRegions();
-                
+
+    TransformMatrix l_arm_manip_transform_offset_matrix;
+    l_arm_manip_transform_offset_matrix.trans = Vector(0,0,0);
+    l_arm_manip_transform_offset_matrix.m[0] = 0; l_arm_manip_transform_offset_matrix.m[1] = 0; l_arm_manip_transform_offset_matrix.m[2] = -1;
+    l_arm_manip_transform_offset_matrix.m[4] = 1; l_arm_manip_transform_offset_matrix.m[5] = 0; l_arm_manip_transform_offset_matrix.m[6] = 0;
+    l_arm_manip_transform_offset_matrix.m[8] = 0; l_arm_manip_transform_offset_matrix.m[9] = -1; l_arm_manip_transform_offset_matrix.m[10] = 0;
+    l_arm_manip_transform_offset = Transform(l_arm_manip_transform_offset_matrix);
+
+    TransformMatrix r_arm_manip_transform_offset_matrix;
+    r_arm_manip_transform_offset_matrix.trans = Vector(0,0,0);
+    r_arm_manip_transform_offset_matrix.m[0] = 0; r_arm_manip_transform_offset_matrix.m[1] = 0; r_arm_manip_transform_offset_matrix.m[2] = -1;
+    r_arm_manip_transform_offset_matrix.m[4] = -1; r_arm_manip_transform_offset_matrix.m[5] = 0; r_arm_manip_transform_offset_matrix.m[6] = 0;
+    r_arm_manip_transform_offset_matrix.m[8] = 0; r_arm_manip_transform_offset_matrix.m[9] = 1; r_arm_manip_transform_offset_matrix.m[10] = 0;
+    r_arm_manip_transform_offset = Transform(r_arm_manip_transform_offset_matrix);
+
+    TransformMatrix l_leg_manip_transform_offset_matrix;
+    l_leg_manip_transform_offset_matrix.trans = Vector(0,0,0);
+    l_leg_manip_transform_offset_matrix.m[0] = 1; l_leg_manip_transform_offset_matrix.m[1] = 0; l_leg_manip_transform_offset_matrix.m[2] = 0;
+    l_leg_manip_transform_offset_matrix.m[4] = 0; l_leg_manip_transform_offset_matrix.m[5] = 1; l_leg_manip_transform_offset_matrix.m[6] = 0;
+    l_leg_manip_transform_offset_matrix.m[8] = 0; l_leg_manip_transform_offset_matrix.m[9] = 0; l_leg_manip_transform_offset_matrix.m[10] = 1;
+    l_leg_manip_transform_offset = Transform(l_leg_manip_transform_offset_matrix);
+
+    TransformMatrix r_leg_manip_transform_offset_matrix;
+    r_leg_manip_transform_offset_matrix.trans = Vector(0,0,0);
+    r_leg_manip_transform_offset_matrix.m[0] = 1; r_leg_manip_transform_offset_matrix.m[1] = 0; r_leg_manip_transform_offset_matrix.m[2] = 0;
+    r_leg_manip_transform_offset_matrix.m[4] = 0; r_leg_manip_transform_offset_matrix.m[5] = 1; r_leg_manip_transform_offset_matrix.m[6] = 0;
+    r_leg_manip_transform_offset_matrix.m[8] = 0; r_leg_manip_transform_offset_matrix.m[9] = 0; r_leg_manip_transform_offset_matrix.m[10] = 1;
+    r_leg_manip_transform_offset = Transform(r_leg_manip_transform_offset_matrix);
+
     balance_step.ReSize(_numdofs);
     balance_step = 0;
     oa_step.ReSize(_numdofs);
@@ -792,7 +862,7 @@ void ElasticStrips::RemoveBadJointJacobianCols(NEWMAT::Matrix& J, size_t w)
 }
 
 
-void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_t w)
+void ElasticStrips::UpdateZRPYandXYJacobianandStep_old(Transform taskframe_in, size_t w)
 {
     map<string,pair<dReal,Transform> > desired_manip_pose = _parameters->_desired_manip_pose.find(w)->second;
 
@@ -882,6 +952,192 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         dxyzrpy.ReSize(6);
 
         TransformDifference(dxyzrpy.Store(), contact_consistent_point_frame, target_manip->GetTransform());
+
+
+        //velocity, can be written as force
+        dxy(i*2+1) = dxyzrpy(1);
+        dxy(i*2+2) = dxyzrpy(2);
+        dzrpy(i*4+1) = dxyzrpy(3);
+        dzrpy(i*4+2) = dxyzrpy(4);
+        dzrpy(i*4+3) = dxyzrpy(5);
+        dzrpy(i*4+4) = dxyzrpy(6);
+
+        xy_error = xy_error + (dxyzrpy(1) * dxyzrpy(1)) + (dxyzrpy(2) * dxyzrpy(2));
+        z_error = z_error + (dxyzrpy(3) * dxyzrpy(3));
+        rpy_error = rpy_error + (dxyzrpy(4) * dxyzrpy(4)) + (dxyzrpy(5) * dxyzrpy(5)) + (dxyzrpy(6) * dxyzrpy(6));;
+
+        //dirty code to decide cogtarg:(specialize to escher robot)
+        if(manip_name == "l_leg")
+        {
+            cogtarg.x += contact_consistent_point.x;
+            cogtarg.y += contact_consistent_point.y;
+            support_links.push_back("l_foot");
+        }
+        else if(manip_name == "r_leg")
+        {
+            cogtarg.x += contact_consistent_point.x;
+            cogtarg.y += contact_consistent_point.y;
+            support_links.push_back("r_foot");
+        }
+        //************//
+        // getchar();
+    }
+
+    RemoveBadJointJacobianCols(JXY,w);
+    Mxy << JXY*JXY.t() + Regxy;
+    invConditioningBound(10000,Mxy,Mxyinv);
+    JXYplus = JXY.t()*Mxyinv;
+
+    RemoveBadJointJacobianCols(JZRPY,w);
+    Mzrpy << JZRPY*JZRPY.t() + Regzrpy;
+    invConditioningBound(10000,Mzrpy,Mzrpyinv);
+    JZRPYplus = JZRPY.t()*Mzrpyinv;
+
+    cogtarg.x /= support_links.size();
+    cogtarg.y /= support_links.size();
+    // if(support_links.size() == 1) // standing with one foot
+    // {
+    //     Vector l_foot_transform = _esRobot->GetLink("l_foot")->GetTransform().trans;
+    //     Vector r_foot_transform = _esRobot->GetLink("r_foot")->GetTransform().trans;
+    //     cogtarg.x = (l_foot_transform.x + r_foot_transform.x)/2.0;
+    // }
+
+
+    if(_parameters->balance_mode == BALANCE_SUPPORT_POLYGON)
+    {
+        vector<dReal> qs;
+        _esRobot->GetActiveDOFValues(qs);
+        balance_checker.RefreshBalanceParameters(qs,support_links);
+    }
+    else if(_parameters->balance_mode == BALANCE_GIWC)
+    {
+        // TODO: add a refreshblanaceparameter function for GIWC
+    }
+
+
+    xy_error = sqrt(xy_error);
+    z_error = sqrt(z_error);
+    rpy_error = sqrt(rpy_error);
+
+    dxy = cxy * dxy;
+    dzrpy = czrpy * dzrpy;
+}
+
+
+void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_t w)
+{
+    map<string,pair<dReal,Transform> > desired_manip_pose = _parameters->_desired_manip_pose.find(w)->second;
+
+    map<string,ContactRegion> nearest_contact_region = nearest_contact_regions.at(w);
+
+    // XY
+    JXY.ReSize(2*desired_manip_pose.size(),_numdofs);
+    JXYplus.ReSize(_numdofs,2*desired_manip_pose.size());
+    Mxy.ReSize(2*desired_manip_pose.size());
+    Mxyinv.ReSize(2*desired_manip_pose.size());
+    dxy.ReSize(2*desired_manip_pose.size());
+    Regxy.ReSize(2*desired_manip_pose.size());
+    Regxy = 0.0001;
+
+    // Z
+    JZ.ReSize(1,_numdofs);
+    JRPY.ReSize(3,_numdofs);
+    
+    JZRPY.ReSize(4*desired_manip_pose.size(),_numdofs);
+    JZRPYplus.ReSize(_numdofs,4*desired_manip_pose.size());
+    Mzrpy.ReSize(4*desired_manip_pose.size());
+    Mzrpyinv.ReSize(4*desired_manip_pose.size());
+    dzrpy.ReSize(4*desired_manip_pose.size());
+    Regzrpy.ReSize(4*desired_manip_pose.size());
+    Regzrpy = 0.0001;
+
+    cogtarg = Vector(0,0,0);
+
+    Transform manip_offset_transform;
+
+    int i = 0;
+    vector<string> support_links;
+    // for(map<string,pair<dReal,Transform> >::iterator dmp_it = desired_manip_pose.begin(); dmp_it != desired_manip_pose.end(); dmp_it++, i++)
+    // {
+    for(map<string,ContactRegion>::iterator ncr_it = nearest_contact_region.begin(); ncr_it != nearest_contact_region.end(); ncr_it++, i++)
+    {
+        string manip_name = ncr_it->first;
+
+        if(strcmp(manip_name,"l_arm") == 0)
+        {
+            manip_offset_transform = l_arm_manip_transform_offset;
+        }
+        else if(strcmp(manip_name,"r_arm") == 0)
+        {
+            manip_offset_transform = r_arm_manip_transform_offset;
+        }
+        else if(strcmp(manip_name,"l_leg") == 0)
+        {
+            manip_offset_transform = l_leg_manip_transform_offset;
+        }
+        else if(strcmp(manip_name,"r_leg") == 0)
+        {
+            manip_offset_transform = r_leg_manip_transform_offset;
+        }
+
+        int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
+        Vector contact_consistent_point = contact_consistent_manip_translation.at(region_index).second;
+
+        Transform contact_consistent_point_frame = ncr_it->second.contact_region_frame;
+        
+        contact_consistent_point_frame.trans.x = contact_consistent_point.x;
+        contact_consistent_point_frame.trans.y = contact_consistent_point.y;
+        contact_consistent_point_frame.trans.z = contact_consistent_point.z;
+
+        // Jacobian
+        RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
+        std::vector<dReal> temp;
+
+        _esRobot->CalculateActiveJacobian(target_manip->GetEndEffector()->GetIndex(), target_manip->GetTransform().trans, temp);
+        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+
+        _esRobot->CalculateActiveAngularVelocityJacobian(target_manip->GetEndEffector()->GetIndex(), temp);
+        memcpy(_Jr0.Store(),&temp[0],temp.size()*sizeof(dReal));
+
+        _TMtask = contact_consistent_point_frame.inverse() * taskframe_in.inverse() * manip_offset_transform.inverse();
+        _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
+        _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
+        _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+
+        _Jp = _tasktm * _Jp0;
+        _Jr = _tasktm * (-_Jr0);
+
+        JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
+        JZ.Row(1) = _Jp.Row(3);
+
+        //convert current rotation to euler angles (RPY) 
+        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*manip_offset_transform.inverse()*target_manip->GetTransform(),_psi,_theta,_phi);
+        //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
+
+        Cphi = cos(_phi);
+        Ctheta = cos(_theta);
+        Cpsi = cos(_psi);
+
+        Sphi = sin(_phi);
+        Stheta = sin(_theta);
+        Spsi = sin(_psi);
+
+        _E_rpy(1,1) = Cphi/Ctheta;         _E_rpy(1,2) = Sphi/Ctheta;         _E_rpy(1,3) = 0;
+        _E_rpy(2,1) = -Sphi;               _E_rpy(2,2) = Cphi;                _E_rpy(2,3) = 0;
+        _E_rpy(3,1) = Cphi*Stheta/Ctheta;  _E_rpy(3,2) = Sphi*Stheta/Ctheta;  _E_rpy(3,3) = 1;
+
+        _Jr_proper = _E_rpy * _Jr;
+
+        JRPY = -_Jr_proper;
+
+        JZRPY.Row(i*4+1) = JZ.Row(1);
+        JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
+
+        // Step
+        NEWMAT::ColumnVector dxyzrpy;
+        dxyzrpy.ReSize(6);
+
+        TransformDifference(dxyzrpy.Store(), contact_consistent_point_frame, manip_offset_transform.inverse()*target_manip->GetTransform());
 
 
         //velocity, can be written as force
@@ -1290,7 +1546,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
         RAVELOG_INFO("Find the contact consistent manipulator transform.\n");
         // Calculate the contact consistent manipulator translation
-        FindContactConsistentManipTranslation(ftraj);
+        // FindContactConsistentManipTranslation(ftraj);
+        FindNearestContactRegion(ftraj);
 
         once_stable_waypoint.clear();
 

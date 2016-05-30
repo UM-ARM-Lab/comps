@@ -6,9 +6,10 @@ class ContactRegion
 {
 	public:
 		ContactRegion(Vector p, Vector n, float r);
-		DistToContactRegion(Transform contact_transform);
+		DistToContactRegion(string contact_manip, Transform contact_transform);
 		TranslationDistToContactRegion(Transform contact_transform);
 		OrientationDistToContactRegion(string contact_manip, Transform contact_transform);
+		Transform contact_region_frame;
 		Vector position;
 		Vector normal;
 		float radius;
@@ -52,10 +53,10 @@ ContactRegion::OrientationDistToContactRegion(string contact_manip, Transform co
 	return orientation_dist;
 }
 
-ContactRegion::DistToContactRegion(Transform contact_transform)
+ContactRegion::DistToContactRegion(string contact_manip, Transform contact_transform)
 {
 	translation_dist = TranslationDistToContactRegion(contact_transform);
-	orientation_dist = OrientationDistToContactRegion(contact_transform);
+	orientation_dist = OrientationDistToContactRegion(contact_manip,contact_transform);
 
 	float k = 0.5;
 
@@ -67,6 +68,31 @@ ContactRegion::ContactRegion(Vector p, Vector n, float r)
 	position = p;
 	normal = n;
 	radius = r;
+
+	TransformMatrix contact_region_frame_matrix;
+	contact_region_frame_matrix.trans = position;
+
+	Vector x_axis;
+	Vector y_axis;
+	Vector z_axis = -normal;
+
+	if(z_axis.x != 0 or z_axis.y != 0)
+	{
+		x_axis = Vector(z_axis.y,-z_axis.x,0);
+	}
+	else
+	{
+		x_axis = Vector(1,0,0);
+	}
+
+	y_axis = z_axis.cross(x_axis);
+
+	contact_region_frame_matrix.m[0] = x_axis.x; contact_region_frame_matrix.m[1] = y_axis.x; contact_region_frame_matrix.m[2] = z_axis.x;
+	contact_region_frame_matrix.m[4] = x_axis.y; contact_region_frame_matrix.m[5] = y_axis.y; contact_region_frame_matrix.m[6] = z_axis.y;
+	contact_region_frame_matrix.m[8] = x_axis.z; contact_region_frame_matrix.m[9] = y_axis.z; contact_region_frame_matrix.m[10] = z_axis.z;
+
+	contact_region_frame = Transform(contact_region_frame_matrix);
+	
 }
 
 #endif

@@ -23,6 +23,7 @@ class ElasticStrips : public ModuleBase
     void InitPlan(boost::shared_ptr<ESParameters> params);
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
     void LoadContactRegions(); // new elastic strips
+    void FindNearestContactRegion(TrajectoryBasePtr ptraj);
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs,string manip_name);
@@ -32,6 +33,7 @@ class ElasticStrips : public ModuleBase
     void GetInternalVector(Vector& internal_vector, TrajectoryBasePtr ptraj, string control_link, size_t w);
 
     void UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_t w);
+    void UpdateZRPYandXYJacobianandStep_old(Transform taskframe_in, size_t w);
     void UpdateCOGJacobianandStep(Transform taskframe_in, size_t w);
     void UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w);
     void UpdatePCJacobianandStep(Transform taskframe_in, size_t w);
@@ -54,8 +56,9 @@ class ElasticStrips : public ModuleBase
     boost::shared_ptr<ESParameters> _parameters;
 
     std::vector<ContactRegion> _contact_regions;
+    std::vector< std::map<string,ContactRegion> > nearest_contact_regions;
 
-    string _strRobotName; ///< name of the active robot
+    string _strRobotName; // name of the active robot
 
     Vector cogtarg;
     Vector curcog;
@@ -156,6 +159,11 @@ class ElasticStrips : public ModuleBase
     NEWMAT::ColumnVector pc_step;
     NEWMAT::ColumnVector m_step;
     NEWMAT::ColumnVector step;
+    
+    Transform l_arm_manip_transform_offset;
+    Transform r_arm_manip_transform_offset;
+    Transform l_leg_manip_transform_offset;
+    Transform r_leg_manip_transform_offset;
     
     //used in transform difference
     Transform _tmtemp;
