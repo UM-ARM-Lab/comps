@@ -55,6 +55,22 @@ NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
 
     NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
 
+    // omit redundant rows, useless, no redundant rows
+    dd_ErrorType err;
+    dd_MatrixPtr contact_span_cdd = dd_CreateMatrix(mat.Nrows(), mat.Ncols()+1);
+    for (int r = 0; r < mat.Nrows(); r++) {
+    // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
+        dd_set_si(contact_span_cdd->matrix[r][0], 0.0);
+        for (int c = 0; c < mat.Ncols(); c++) {
+            dd_set_si(contact_span_cdd->matrix[r][c+1], mat(r+1, c+1));
+        }
+    }
+
+    _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,mat));
+
+    dd_FreeMatrix(contact_span_cdd);
+    f_cones_diagonal.ReleaseAndDelete();
+    a_surf_stacked.ReleaseAndDelete();
     mat.Release();
     return mat;
 }
@@ -67,6 +83,14 @@ void Balance::GetSupportPointsForLink(RobotBase::LinkPtr p_link, Vector tool_dir
 
     // If any extent is 0, the link has no volume and is assumed to be a virtual link
     if (aabb.extents.x <= 0 || aabb.extents.y <= 0 || aabb.extents.z <= 0) {
+        return;
+    }
+
+    if(strcmp(p_link->GetName().c_str(), "l_foot") != 0 &&
+       strcmp(p_link->GetName().c_str(), "r_foot") != 0 &&
+       strcmp(p_link->GetName().c_str(), "l_palm") != 0 &&
+       strcmp(p_link->GetName().c_str(), "r_palm") != 0)
+    {
         return;
     }
 
@@ -107,7 +131,7 @@ std::vector<Vector> Balance::GetSupportPoints(RobotBase::ManipulatorPtr p_manip)
 
     std::vector<Vector> contacts;
     for (int i = 0; i < attached_links.size(); i++) {
-        // const char* link_name = attached_links[i]->GetName().c_str();
+        const char* link_name = attached_links[i]->GetName().c_str();
 
         // Transforms the tool_dir into the link frame
         GetSupportPointsForLink(attached_links[i], world_to_manip * attached_links[i]->GetTransform() * tool_dir, p_manip->GetTransform(), contacts);
@@ -128,9 +152,9 @@ void Balance::GetFrictionCone(Vector& center, Vector& direction, dReal mu, NEWMA
     // NOTE 1-based indexing
     for (int i = 1; i <= CONE_DISCRETIZATION_RESOLUTION; i++) {
         // a-colum will be -1 or 1. The -1 multiplication is because friction force occurs in the opposite direction
-        (*mat)(offset_r + i, offset_c + a) = center[a-1] + direction[a-1] * -1;
-        (*mat)(offset_r + i, offset_c + s) = center[s-1] + mu * sin(angle);
-        (*mat)(offset_r + i, offset_c + c) = center[c-1] + mu * cos(angle);
+        (*mat)(offset_r + i, offset_c + a) = direction[a-1] * -1;
+        (*mat)(offset_r + i, offset_c + s) = round(mu * sin(angle) * 10000) * 0.0001;
+        (*mat)(offset_r + i, offset_c + c) = round(mu * cos(angle) * 10000) * 0.0001;
         angle += step;
     }
 
@@ -172,7 +196,7 @@ void Balance::GetASurf(RobotBase::ManipulatorPtr p_manip, Transform cone_to_mani
 void Balance::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) {
     // Note: This AStance computes the transpose of the AStance from the GIWC paper,
     // because of the way the cone representation is done here
-    TransformMatrix m = TransformMatrix(tf.inverse());
+    TransformMatrix m = TransformMatrix(tf);
 
     // Create -R matrix
     NEWMAT::Matrix negR_T(3, 3);
@@ -193,6 +217,9 @@ void Balance::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) {
     (*mat).SubMatrix(offset_r + 1, offset_r + 3, 4, 6) = negR_T * crossP_T;
     (*mat).SubMatrix(offset_r + 4, offset_r + 6, 1, 3) = 0.0;
     (*mat).SubMatrix(offset_r + 4, offset_r + 6, 4, 6) = negR_T;
+
+    negR_T.ReleaseAndDelete();
+    crossP_T.ReleaseAndDelete();
 }
 
 NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
@@ -225,6 +252,12 @@ NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
 
     NEWMAT::Matrix mat = s_cones_diagonal * a_stance_stacked; // Dot product
 
+    s_cones_diagonal.ReleaseAndDelete();
+    a_stance_stacked.ReleaseAndDelete();
+    for(unsigned int i = 0; i < matrices.size(); i++)
+    {
+        matrices[i].ReleaseAndDelete();
+    }
     mat.Release();
     return mat;
 }
@@ -270,6 +303,7 @@ void Balance::GetGIWC()
         }
     }
 
+    giwc_span.ReleaseAndDelete();
     dd_FreeMatrix(giwc_face_cdd);
     dd_FreeMatrix(giwc_span_cdd);
     dd_FreePolyhedra(poly);

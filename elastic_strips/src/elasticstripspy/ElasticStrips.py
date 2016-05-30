@@ -285,7 +285,8 @@ class ElasticStrips(object):
                 cmd.append(i)
                 cmd.append(len(manips))
                 for manip in manips:
-                    cmd.append(manip)
+                    cmd.append(manip[0])
+                    cmd.append(manip[1])
 
         if desiredmanippose is not None:
             for waypoints in desiredmanippose:

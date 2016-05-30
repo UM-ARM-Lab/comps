@@ -40,7 +40,7 @@ GeneralIK::GeneralIK(EnvironmentBasePtr penv) : IkSolverBase(penv)
 {
     __description = ":Interface Author: Dmitry Berenson\nAn iterative IK solver for kinematic chains. Can also take into account balance constraints. \n\n`C++ Documentation <http://automation.berkeley.edu/~berenson/docs/generalik/index.html>`_";
 
-    _pEnvironment = penv;
+    _pEnvironment = penv; 
 }
 
 

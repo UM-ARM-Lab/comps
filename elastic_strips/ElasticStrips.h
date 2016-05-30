@@ -23,6 +23,7 @@ class ElasticStrips : public ModuleBase
     void InitPlan(boost::shared_ptr<ESParameters> params);
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
     void LoadContactRegions(); // new elastic strips
+    void DecideContactConsistentTransform(TrajectoryBasePtr ptraj);
     void FindNearestContactRegion(TrajectoryBasePtr ptraj);
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
@@ -57,6 +58,13 @@ class ElasticStrips : public ModuleBase
 
     std::vector<ContactRegion> _contact_regions;
     std::vector< std::map<string,ContactRegion> > nearest_contact_regions;
+
+    std::map< int, ContactRegion > nearest_contact_regions; // <manips group, contact region>
+    std::map< int, ContactManipGroup > contact_manips_group; // <group index, <manip name, contact-consistent transform, manip of (manip name) in the wp index belongs to this group> >
+    std::map< size_t, std::map<string,int> > waypoint_manip_group_map; // <waypoint index, <manip_name,contact consistent transform> >
+
+    std::vector<int> start_contact_group_index;
+    std::vector<int> goal_contact_group_index;
 
     string _strRobotName; // name of the active robot
 

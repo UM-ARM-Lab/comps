@@ -220,17 +220,24 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             int temp_index;
             int contact_manip_num;
             string manip_name;
+            int group_index;
             sinput >> temp_index;
             sinput >> contact_manip_num;
             std::vector<string> contact_manip;
 
+            std::map< size_t, std::map<string,int> > waypoint_manip_group_map;
+
+            std::map<string,int> manip_group_map;
+
             for(int i = 0; i < contact_manip_num; i++)
             {
                 sinput >> manip_name;
-                contact_manip.push_back(manip_name);
+                sinput >> group_index;
+                manip_group_map.insert(std::pair<string,int>(manip_name,group_index));
             }
 
-            params->_contact_manips.insert(std::pair<size_t, std::vector<string> >(temp_index,contact_manip))
+            waypoint_manip_group_map.insert(std::pair< size_t, std::map<string,int> >(temp_index,manip_group_map));
+
         }
         else if(stricmp(cmd.c_str(), "checkcollision") == 0) {
             params->bOBSTACLE_AVOIDANCE = true;
@@ -459,26 +466,79 @@ void ElasticStrips::LoadContactRegions()
     }
 }
 
-void ElasticStrips::FindNearestContactRegion(TrajectoryBasePtr ptraj)
+void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 {
-    std::vector< std::map<string,ContactRegion> > temp_nearest_contact_regions(ptraj->GetNumWaypoints());
-    for(unsigned int w = 0; w < ptraj->GetNumWaypoints(); w++)
+    for(std::map< int, std::tuple< string, Transform, std::vector<size_t> > >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
     {
-        std::vector<dReal> qt;
-        ptraj->GetWaypoint(w,qt);
+        int contact_manip_group_index = cmg_it->first;
+        string manip_name = cmg_it->second.manip_name;
+        Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
+        std::vector<size_t> wp_indices = cmg_it->second.waypoints;
+        Vector axis_angle(0,0,0);
+        Vector contact_consistent_translation(0,0,0);
 
-        std::vector<string> manips_name = _parameters->_contact_manips.find(w).second;
-
-        for(std::vector<string>::iterator mn_it = manips_name.begin(); mn_it != manips_name.end(); mn_it++)
+        for(std::vector<size_t>::iterator wi_it = wp_indices.begin(); wi_it != wp_indices.end(); wi_it++)
         {
-            string name = *mn_it;
+            vector<dReal> qt;
+            ptraj->GetWaypoint((*wi_it),qt);
+
+            Transform manip_transform = ForwardKinematics(qt,manip_name);
+
+            axis_angle = axis_angle + axisAngleFromQuat(manip_transform.rot) / float(wp_indices.size());
+            contact_consistent_translation = contact_consistent_translation + manip_transform.trans / float(wp_indices.size());
+        }
+
+        contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
+        contact_consistent_transform.trans = contact_consistent_translation;
+
+        if(strcmp(manip_name.c_str(),"l_arm") == 0)
+        {
+            contact_consistent_transform = contact_consistent_transform * l_arm_manip_transform_offset;
+        }
+        else if(strcmp(manip_name.c_str(),"r_arm") == 0)
+        {
+            contact_consistent_transform = contact_consistent_transform * r_arm_manip_transform_offset;
+        }
+        else if(strcmp(manip_name.c_str(),"l_leg") == 0)
+        {
+            contact_consistent_transform = contact_consistent_transform * l_leg_manip_transform_offset;
+        }
+        else if(strcmp(manip_name.c_str(),"r_leg") == 0)
+        {
+            contact_consistent_transform = contact_consistent_transform * r_leg_manip_transform_offset;
+        }
+
+        cmg_it->second.contact_consistent_transform = contact_consistent_transform;
+
+    }
+}
+
+void ElasticStrips::FindNearestContactRegion()
+{
+    std::map< int, ContactRegion > temp_nearest_contact_regions;
+
+    for(std::map< int, std::tuple< string, Transform, std::vector<size_t> > >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+    {
+        int contact_manip_group_index = cmg_it->first;
+        string manip_name = cmg_it->second.manip_name;
+        Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
+        ContactRegion nearest_contact_region;
+
+        if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
+        {
+            nearest_contact_region = _contact_regions.at(_contact_regions.size() - 2);
+        }
+        else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
+        {
+            nearest_contact_region = _contact_regions.at(_contact_regions.size() - 1);
+        }
+        else
+        {
             float nearest_dist = 9999.0;
-            ContactRegion nearest_contact_region;
-            Transform end_effector_transform = ForwardKinematics(qt,name);
 
             for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
             {
-                float dist = cr_it->DistToContactRegion(name,end_effector_transform);
+                float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
 
                 if(dist < nearest_dist)
                 {
@@ -491,14 +551,38 @@ void ElasticStrips::FindNearestContactRegion(TrajectoryBasePtr ptraj)
                     break;
                 }
             }
-
-            temp_nearest_contact_regions[w].insert(std::pair<string,ContactRegion>(name,nearest_contact_region));
-
         }
+
+        temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
+
+        // project transform to the contact region
+
+        Transform contact_region_frame = nearest_contact_region.contact_region_frame;
+
+        Transform projected_contact_consistent_transform = contact_region_frame.inverse() * contact_consistent_transform;
+
+        projected_contact_consistent_transform.trans.z = 0.0;
+
+        float dist_to_center = projected_contact_consistent_transform.trans.lengthsqr3();
+
+        if(dist_to_center > nearest_contact_region.radius)
+        {
+            projected_contact_consistent_transform.trans.x *= (nearest_contact_region.radius/dist_to_center);
+            projected_contact_consistent_transform.trans.y *= (nearest_contact_region.radius/dist_to_center);
+        }
+
+        projected_contact_consistent_transform_axis_angle = axisAngleFromQuat(projected_contact_consistent_transform.rot);
+        projected_contact_consistent_transform_axis_angle.x = 0.0;
+        projected_contact_consistent_transform_axis_angle.y = 0.0;
+
+        projected_contact_consistent_transform.rot = quatFromAxisAngle(projected_contact_consistent_transform_axis_angle);
+
+        cmg_it->second.contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
 
     }
 
     nearest_contact_regions = temp_nearest_contact_regions;
+
 }
 
 void ElasticStrips::FindContactRegions()
@@ -669,6 +753,43 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
     r_leg_manip_transform_offset_matrix.m[4] = 0; r_leg_manip_transform_offset_matrix.m[5] = 1; r_leg_manip_transform_offset_matrix.m[6] = 0;
     r_leg_manip_transform_offset_matrix.m[8] = 0; r_leg_manip_transform_offset_matrix.m[9] = 0; r_leg_manip_transform_offset_matrix.m[10] = 1;
     r_leg_manip_transform_offset = Transform(r_leg_manip_transform_offset_matrix);
+
+
+    for(std::map< size_t, std::map<string,int> >::iterator wmgm_it = waypoint_manip_group_map.begin(); wmgm_it != waypoint_manip_group_map.end(); wmgm_it++)
+    {
+        size_t waypoint_index = wmgm_it->first;
+        string manip_name = wmgm_it->second.first;
+        int manip_group_index = wmgm_it->second.second;
+
+        if(contact_manips_group.count(manip_group_index) != 0)
+        {
+            contact_manips_group.find(manip_group_index)->second.waypoints.push_back(waypoint_index);
+        }
+        else
+        {
+            std::vector<size_t> waypoint_indices = [waypoint_index];
+            ContactManipGroup cmg(manip_group_index, manip_name, Transform(), waypoint_indices);
+            contact_manips_group.insert(std::pair<int,ContactManipGroup>(manip_group_index,cmg));
+        }
+    }
+
+    start_contact_group_index = [0,1];
+    goal_contact_group_index = [0,0];
+
+    for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+    {
+        int contact_manip_group_index = cmg_it->first;
+        string manip_name = cmg_it->second.manip_name;
+
+        if(strcmp(manip_name.c_str(),"l_leg") == 0)
+        {
+            goal_contact_group_index[0] = contact_manip_group_index;
+        }
+        else if(strcmp(manip_name.c_str(),"r_leg") == 0)
+        {
+            goal_contact_group_index[1] = contact_manip_group_index;
+        }
+    }
 
     balance_step.ReSize(_numdofs);
     balance_step = 0;
@@ -1030,6 +1151,8 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
     map<string,ContactRegion> nearest_contact_region = nearest_contact_regions.at(w);
 
+    map<string,int> manip_group_map = waypoint_manip_group_map.find(w)->second;
+
     // XY
     JXY.ReSize(2*desired_manip_pose.size(),_numdofs);
     JXYplus.ReSize(_numdofs,2*desired_manip_pose.size());
@@ -1059,35 +1182,40 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     vector<string> support_links;
     // for(map<string,pair<dReal,Transform> >::iterator dmp_it = desired_manip_pose.begin(); dmp_it != desired_manip_pose.end(); dmp_it++, i++)
     // {
-    for(map<string,ContactRegion>::iterator ncr_it = nearest_contact_region.begin(); ncr_it != nearest_contact_region.end(); ncr_it++, i++)
+    // for(map<string,ContactRegion>::iterator ncr_it = nearest_contact_region.begin(); ncr_it != nearest_contact_region.end(); ncr_it++, i++)
+    // {
+    for(map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++)
     {
-        string manip_name = ncr_it->first;
+        string manip_name = mgm_it->first;
+        int manip_group_index = mgm_it->second;
 
-        if(strcmp(manip_name,"l_arm") == 0)
+        if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
             manip_offset_transform = l_arm_manip_transform_offset;
         }
-        else if(strcmp(manip_name,"r_arm") == 0)
+        else if(strcmp(manip_name.c_str(),"r_arm") == 0)
         {
             manip_offset_transform = r_arm_manip_transform_offset;
         }
-        else if(strcmp(manip_name,"l_leg") == 0)
+        else if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
             manip_offset_transform = l_leg_manip_transform_offset;
         }
-        else if(strcmp(manip_name,"r_leg") == 0)
+        else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
             manip_offset_transform = r_leg_manip_transform_offset;
         }
 
-        int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
-        Vector contact_consistent_point = contact_consistent_manip_translation.at(region_index).second;
+        // int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
+        // Vector contact_consistent_point = contact_consistent_manip_translation.at(region_index).second;
 
-        Transform contact_consistent_point_frame = ncr_it->second.contact_region_frame;
+        // Transform contact_consistent_point_frame = ncr_it->second.contact_region_frame;
         
-        contact_consistent_point_frame.trans.x = contact_consistent_point.x;
-        contact_consistent_point_frame.trans.y = contact_consistent_point.y;
-        contact_consistent_point_frame.trans.z = contact_consistent_point.z;
+        // contact_consistent_point_frame.trans.x = contact_consistent_point.x;
+        // contact_consistent_point_frame.trans.y = contact_consistent_point.y;
+        // contact_consistent_point_frame.trans.z = contact_consistent_point.z;
+
+        Transform contact_consistent_point_frame = contact_manips_group.find(manip_group_index)->second.contact_consistent_transform; // contact_consistent_point_frame with rotated end-effector transform
 
         // Jacobian
         RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
@@ -1547,7 +1675,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         RAVELOG_INFO("Find the contact consistent manipulator transform.\n");
         // Calculate the contact consistent manipulator translation
         // FindContactConsistentManipTranslation(ftraj);
-        FindNearestContactRegion(ftraj);
+        DecideContactConsistentTransform(ftraj);
+        FindNearestContactRegion();
 
         once_stable_waypoint.clear();
 
