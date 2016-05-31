@@ -167,19 +167,20 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
         }
         else if(stricmp(cmd.c_str(), "trajectory") == 0) {
             cout<<"asdasd"<<endl;
+            cout<<_numdofs<<' '<<_esRobot->GetActiveDOF()<<endl;
             // This is mandatory for the elastic strips to work.
             sinput >> num_waypoints;
             std::vector<dReal> temp_waypoint(_numdofs);
-            int temp_index;
+            // int temp_index;
             for(int i = 0; i < num_waypoints; i++)
             {
-                sinput >> temp_index;
+                // sinput >> temp_index;
                 for(int j = 0; j < _numdofs; j++)
                 {
                     sinput >> temp_q;
                     temp_waypoint[j] = temp_q;
                 }
-                ptraj->Insert(temp_index,temp_waypoint,_esRobot->GetActiveConfigurationSpecification());
+                ptraj->Insert(ptraj->GetNumWaypoints(),temp_waypoint,_esRobot->GetActiveConfigurationSpecification());
             }
         }
         else if(stricmp(cmd.c_str(), "desiredmanippose") == 0) {
@@ -479,6 +480,13 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
         Vector axis_angle(0,0,0);
         Vector contact_consistent_translation(0,0,0);
 
+        stringstream ss;
+        ss << contact_manip_group_index;
+        string contact_kinbody_name = "contact_" + ss.str();
+
+        KinBodyPtr contact_kinbody = _esEnv->GetKinBody(contact_kinbody_name);
+
+
         for(std::vector<size_t>::iterator wi_it = wp_indices.begin(); wi_it != wp_indices.end(); wi_it++)
         {
             vector<dReal> qt;
@@ -492,6 +500,8 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 
         contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
         contact_consistent_transform.trans = contact_consistent_translation;
+
+        contact_kinbody->SetTransform(contact_consistent_transform);
 
         if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
@@ -519,31 +529,26 @@ void ElasticStrips::FindNearestContactRegion()
 {
     std::map< int, ContactRegion > temp_nearest_contact_regions;
 
-    cout<<"QQQ"<<endl;
+    std::vector<GraphHandlePtr> handles;
 
     for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
     {
-        cout<<"WWW"<<endl;
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
         Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
         ContactRegion nearest_contact_region;
 
-        cout<<"EEE"<<endl;
 
         if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
         {
-            cout<<"RRR-1"<<endl;
             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 2);
         }
         else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
         {
-            cout<<"RRR-2"<<endl;
             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 1);
         }
         else
         {
-            cout<<"RRR-3"<<endl;
             float nearest_dist = 9999.0;
 
             for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
@@ -563,8 +568,6 @@ void ElasticStrips::FindNearestContactRegion()
             }
         }
 
-        cout<<"TTT"<<endl;
-
         temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
 
         // project transform to the contact region
@@ -577,7 +580,6 @@ void ElasticStrips::FindNearestContactRegion()
 
         float dist_to_center = projected_contact_consistent_transform.trans.lengthsqr3();
 
-        cout<<"YYY"<<endl;
 
         if(dist_to_center > nearest_contact_region.radius)
         {
@@ -589,17 +591,27 @@ void ElasticStrips::FindNearestContactRegion()
         projected_contact_consistent_transform_axis_angle.x = 0.0;
         projected_contact_consistent_transform_axis_angle.y = 0.0;
 
-        cout<<"UUU"<<endl;
 
         projected_contact_consistent_transform.rot = quatFromAxisAngle(projected_contact_consistent_transform_axis_angle);
 
         cmg_it->second.contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
 
-        cout<<"III"<<endl;
+        TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
+
+        Vector from_vec = contact_region_frame.trans;
+        Vector to_vec_1 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
+        Vector to_vec_2 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
+        Vector to_vec_3 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
+
+        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_1, 0.005, RaveVector<float>(1, 0, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_2, 0.005, RaveVector<float>(0, 1, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_3, 0.005, RaveVector<float>(0, 0, 1, 1)));
+
+        int a;
+        a=getchar();
 
     }
 
-    cout<<"OOO"<<endl;
 
     nearest_contact_regions = temp_nearest_contact_regions;
 

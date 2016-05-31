@@ -12,6 +12,8 @@ class ElasticStrips : public ModuleBase
         RegisterCommand("RunElasticStrips",boost::bind(&ElasticStrips::RunElasticStrips,this,_1,_2),
                         "Run the Elastic Strips Planner");
 
+        _esEnv = penv;
+
     }
     virtual ~ElasticStrips() {}
 
