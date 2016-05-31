@@ -55,20 +55,7 @@ NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
 
     NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
 
-    // omit redundant rows, useless, no redundant rows
-    dd_ErrorType err;
-    dd_MatrixPtr contact_span_cdd = dd_CreateMatrix(mat.Nrows(), mat.Ncols()+1);
-    for (int r = 0; r < mat.Nrows(); r++) {
-    // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
-        dd_set_si(contact_span_cdd->matrix[r][0], 0.0);
-        for (int c = 0; c < mat.Ncols(); c++) {
-            dd_set_si(contact_span_cdd->matrix[r][c+1], mat(r+1, c+1));
-        }
-    }
 
-    _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,mat));
-
-    dd_FreeMatrix(contact_span_cdd);
     f_cones_diagonal.ReleaseAndDelete();
     a_surf_stacked.ReleaseAndDelete();
     mat.Release();

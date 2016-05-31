@@ -3,6 +3,7 @@
 
 #include <cdd/setoper.h>
 #include <cdd/cdd.h>
+// #include "ContactRegion.h"
 
 class ElasticStrips : public ModuleBase
 {
@@ -24,7 +25,7 @@ class ElasticStrips : public ModuleBase
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
     void LoadContactRegions(); // new elastic strips
     void DecideContactConsistentTransform(TrajectoryBasePtr ptraj);
-    void FindNearestContactRegion(TrajectoryBasePtr ptraj);
+    void FindNearestContactRegion();
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs,string manip_name);
@@ -57,7 +58,6 @@ class ElasticStrips : public ModuleBase
     boost::shared_ptr<ESParameters> _parameters;
 
     std::vector<ContactRegion> _contact_regions;
-    std::vector< std::map<string,ContactRegion> > nearest_contact_regions;
 
     std::map< int, ContactRegion > nearest_contact_regions; // <manips group, contact region>
     std::map< int, ContactManipGroup > contact_manips_group; // <group index, <manip name, contact-consistent transform, manip of (manip name) in the wp index belongs to this group> >
