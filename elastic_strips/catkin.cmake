@@ -34,6 +34,7 @@ include_directories(
 openrave_plugin("${PROJECT_NAME}_plugin"
     ElasticStrips.cpp
     Balance.cpp
+    ContactRegion.cpp
 )
 target_link_libraries("${PROJECT_NAME}_plugin"
     qhull

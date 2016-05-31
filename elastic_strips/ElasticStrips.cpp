@@ -166,6 +166,7 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             bGetTime = true;
         }
         else if(stricmp(cmd.c_str(), "trajectory") == 0) {
+            cout<<"asdasd"<<endl;
             // This is mandatory for the elastic strips to work.
             sinput >> num_waypoints;
             std::vector<dReal> temp_waypoint(_numdofs);
@@ -217,6 +218,7 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
 
         }
         else if(stricmp(cmd.c_str(), "contact_manips") == 0){
+            cout<<"qweqwe"<<endl;
             int temp_index;
             int contact_manip_num;
             string manip_name;
@@ -224,8 +226,6 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             sinput >> temp_index;
             sinput >> contact_manip_num;
             std::vector<string> contact_manip;
-
-            std::map< size_t, std::map<string,int> > waypoint_manip_group_map;
 
             std::map<string,int> manip_group_map;
 
@@ -436,7 +436,8 @@ Transform ElasticStrips::ForwardKinematics(std::vector<dReal> qs,string manip_na
 void ElasticStrips::LoadContactRegions()
 {
     std::ifstream f_contact_region;
-    f_contact_region.open("../../escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
+    // /yuchi_ws/escher_openrave/escher_openrave/scripts
+    f_contact_region.open("/home/yu-chi/flor_repo/catkin_ws/src/yuchi_ws/escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
     string data_string;
     while(getline(f_contact_region,data_string))
     {
@@ -464,6 +465,7 @@ void ElasticStrips::LoadContactRegions()
 
         _contact_regions.push_back(ContactRegion(contact_position,contact_normal,contact_radius));
     }
+    f_contact_region.close();
 }
 
 void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
@@ -517,23 +519,31 @@ void ElasticStrips::FindNearestContactRegion()
 {
     std::map< int, ContactRegion > temp_nearest_contact_regions;
 
+    cout<<"QQQ"<<endl;
+
     for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
     {
+        cout<<"WWW"<<endl;
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
         Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
         ContactRegion nearest_contact_region;
 
+        cout<<"EEE"<<endl;
+
         if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
         {
+            cout<<"RRR-1"<<endl;
             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 2);
         }
         else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
         {
+            cout<<"RRR-2"<<endl;
             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 1);
         }
         else
         {
+            cout<<"RRR-3"<<endl;
             float nearest_dist = 9999.0;
 
             for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
@@ -553,6 +563,8 @@ void ElasticStrips::FindNearestContactRegion()
             }
         }
 
+        cout<<"TTT"<<endl;
+
         temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
 
         // project transform to the contact region
@@ -565,6 +577,8 @@ void ElasticStrips::FindNearestContactRegion()
 
         float dist_to_center = projected_contact_consistent_transform.trans.lengthsqr3();
 
+        cout<<"YYY"<<endl;
+
         if(dist_to_center > nearest_contact_region.radius)
         {
             projected_contact_consistent_transform.trans.x *= (nearest_contact_region.radius/dist_to_center);
@@ -575,11 +589,17 @@ void ElasticStrips::FindNearestContactRegion()
         projected_contact_consistent_transform_axis_angle.x = 0.0;
         projected_contact_consistent_transform_axis_angle.y = 0.0;
 
+        cout<<"UUU"<<endl;
+
         projected_contact_consistent_transform.rot = quatFromAxisAngle(projected_contact_consistent_transform_axis_angle);
 
         cmg_it->second.contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
 
+        cout<<"III"<<endl;
+
     }
+
+    cout<<"OOO"<<endl;
 
     nearest_contact_regions = temp_nearest_contact_regions;
 
@@ -1184,7 +1204,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     int i = 0;
     vector<string> support_links;
 
-    for(map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++)
+    for(map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++, i++)
     {
         string manip_name = mgm_it->first;
         int manip_group_index = mgm_it->second;
@@ -1328,13 +1348,13 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         // TODO: add a refreshblanaceparameter function for GIWC
     }
 
-
     xy_error = sqrt(xy_error);
     z_error = sqrt(z_error);
     rpy_error = sqrt(rpy_error);
 
     dxy = cxy * dxy;
     dzrpy = czrpy * dzrpy;
+
 }
 
 
@@ -1675,7 +1695,9 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         RAVELOG_INFO("Find the contact consistent manipulator transform.\n");
         // Calculate the contact consistent manipulator translation
         // FindContactConsistentManipTranslation(ftraj);
+        cout<<"Decide Contact Consistent Region."<<endl;
         DecideContactConsistentTransform(ftraj);
+        cout<<"Find Nearest Contact Region."<<endl;
         FindNearestContactRegion();
 
         once_stable_waypoint.clear();
@@ -1691,6 +1713,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         // }
 
         // getchar();
+
+        cout<<"Start to modify the trajectory."<<endl;
 
         for(unsigned int w = 0; w < ftraj->GetNumWaypoints(); w++) // for each configuration in the trjectory
         {
