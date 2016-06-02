@@ -166,8 +166,6 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             bGetTime = true;
         }
         else if(stricmp(cmd.c_str(), "trajectory") == 0) {
-            cout<<"asdasd"<<endl;
-            cout<<_numdofs<<' '<<_esRobot->GetActiveDOF()<<endl;
             // This is mandatory for the elastic strips to work.
             sinput >> num_waypoints;
             std::vector<dReal> temp_waypoint(_numdofs);
@@ -219,7 +217,6 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
 
         }
         else if(stricmp(cmd.c_str(), "contact_manips") == 0){
-            cout<<"qweqwe"<<endl;
             int temp_index;
             int contact_manip_num;
             string manip_name;
@@ -480,12 +477,14 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
         Vector axis_angle(0,0,0);
         Vector contact_consistent_translation(0,0,0);
 
+
         stringstream ss;
         ss << contact_manip_group_index;
         string contact_kinbody_name = "contact_" + ss.str();
 
         KinBodyPtr contact_kinbody = _esEnv->GetKinBody(contact_kinbody_name);
 
+        cout<<contact_manip_group_index<<endl;
 
         for(std::vector<size_t>::iterator wi_it = wp_indices.begin(); wi_it != wp_indices.end(); wi_it++)
         {
@@ -498,7 +497,12 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
             contact_consistent_translation = contact_consistent_translation + (1/float(wp_indices.size())) * manip_transform.trans;
         }
 
+        TransformMatrix contact_consistent_transform_matrix = TransformMatrix(contact_consistent_transform);
+
+        // getchar();
+
         contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
+
         contact_consistent_transform.trans = contact_consistent_translation;
 
         contact_kinbody->SetTransform(contact_consistent_transform);
@@ -528,7 +532,6 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 void ElasticStrips::FindNearestContactRegion()
 {
     std::map< int, ContactRegion > temp_nearest_contact_regions;
-
     std::vector<GraphHandlePtr> handles;
 
     for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
@@ -578,7 +581,7 @@ void ElasticStrips::FindNearestContactRegion()
 
         projected_contact_consistent_transform.trans.z = 0.0;
 
-        float dist_to_center = projected_contact_consistent_transform.trans.lengthsqr3();
+        float dist_to_center = sqrt(projected_contact_consistent_transform.trans.lengthsqr3());
 
 
         if(dist_to_center > nearest_contact_region.radius)
@@ -598,17 +601,27 @@ void ElasticStrips::FindNearestContactRegion()
 
         TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
 
-        Vector from_vec = contact_region_frame.trans;
-        Vector to_vec_1 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
-        Vector to_vec_2 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
-        Vector to_vec_3 = contact_region_frame.trans + 0.2 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
+        Vector crf_origin = contact_region_frame.trans;
+        Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
+        Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
+        Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
 
-        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_1, 0.005, RaveVector<float>(1, 0, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_2, 0.005, RaveVector<float>(0, 1, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(from_vec, to_vec_3, 0.005, RaveVector<float>(0, 0, 1, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
-        int a;
-        a=getchar();
+        Vector cct_origin = contact_consistent_transform.trans;
+        TransformMatrix contact_consistent_transform_matrix = TransformMatrix(contact_consistent_transform);
+        Vector cct_x = contact_consistent_transform.trans + 0.3 * Vector(contact_consistent_transform_matrix.m[0],contact_consistent_transform_matrix.m[4],contact_consistent_transform_matrix.m[8]);
+        Vector cct_y = contact_consistent_transform.trans + 0.3 * Vector(contact_consistent_transform_matrix.m[1],contact_consistent_transform_matrix.m[5],contact_consistent_transform_matrix.m[9]);
+        Vector cct_z = contact_consistent_transform.trans + 0.3 * Vector(contact_consistent_transform_matrix.m[2],contact_consistent_transform_matrix.m[6],contact_consistent_transform_matrix.m[10]);
+
+        handles.push_back(_esEnv->drawarrow(cct_origin, cct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+        // int a;
+        // a=getchar();
 
     }
 
@@ -915,7 +928,7 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
                            obstacle_frame_control_point_position.z != nearest_point.z)
                         {
                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3();
+                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());
                             repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
                         }
                         else
@@ -930,8 +943,8 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
                     else if(obstacle_geometry_type == GT_Sphere)
                     {
                         repulsive_vector_component = control_point_global_position - obstacle_translation;
-                        if(repulsive_vector_component.lengthsqr3() > (*geom_it)->GetSphereRadius())
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3() - (*geom_it)->GetSphereRadius();
+                        if(sqrt(repulsive_vector_component.lengthsqr3()) > (*geom_it)->GetSphereRadius())
+                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3()) - (*geom_it)->GetSphereRadius();
                         else
                             dist_to_obstacle = 0;
                         repulsive_vector_component = repulsive_vector_component.normalize3();
@@ -956,7 +969,7 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
                                 nearest_point.z = obstacle_frame_control_point_position.z;
 
                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = repulsive_vector_component.lengthsqr3();                    
+                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());                    
                         }
                         else
                         {
@@ -1001,7 +1014,7 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
 
     if(repulsive_vector.lengthsqr3() != 0)
     {
-        repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/repulsive_vector.lengthsqr3());
+        repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/sqrt(repulsive_vector.lengthsqr3()));
         // cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
     }
 
@@ -1271,7 +1284,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         JZ.Row(1) = _Jp.Row(3);
 
         //convert current rotation to euler angles (RPY) 
-        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*manip_offset_transform.inverse()*target_manip->GetTransform(),_psi,_theta,_phi);
+        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),_psi,_theta,_phi);
         //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
         Cphi = cos(_phi);
@@ -1297,7 +1310,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         NEWMAT::ColumnVector dxyzrpy;
         dxyzrpy.ReSize(6);
 
-        TransformDifference(dxyzrpy.Store(), contact_consistent_point_frame, manip_offset_transform.inverse()*target_manip->GetTransform());
+        TransformDifference(dxyzrpy.Store(), contact_consistent_point_frame, target_manip->GetTransform()*manip_offset_transform);
 
 
         //velocity, can be written as force
@@ -1643,6 +1656,8 @@ dReal ElasticStrips::TransformDifference(dReal * dx,Transform tm_ref, Transform 
 
 OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 {
+    EnvironmentMutex::scoped_lock lockenv(_esEnv->GetMutex());
+
     OpenRAVE::PlannerStatus result = PS_HasSolution;
     dReal maxstep, magnitude;
 
@@ -1788,7 +1803,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 }
 
                 //may require another condition to check posture control
-                if((xy_error < epsilon) &&
+                if((sqrt(pow(xy_error,2) + pow(z_error,2)) < epsilon) &&
                    (_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog)) &&
                    (_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false))
                 {
@@ -1799,7 +1814,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 }
                 else
                 {
-                    cout<<"Reach Point: "<<(xy_error < epsilon)<<endl;
+                    cout<<"Reach Point: "<<(sqrt(pow(xy_error,2) + pow(z_error,2)) < epsilon)<<endl;
                     cout<<"balanced: "<<(_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog))<<endl;
                     cout<<"free of collision: "<<(_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false)<<endl;
                 }

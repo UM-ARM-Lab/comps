@@ -47,7 +47,7 @@ float ContactRegion::TranslationDistToContactRegion(Transform contact_transform)
 
 	float z_dist = fabs(center_translation.dot(normal));
 
-	float xy_dist = max(sqrt(pow(center_translation.lengthsqr3(),2) - pow(z_dist,2)) - radius, 0.0);
+	float xy_dist = max(sqrt(center_translation.lengthsqr2()) - radius, 0.0);
 
 	float translation_dist = sqrt(pow(xy_dist,2) + pow(z_dist,2));
 
