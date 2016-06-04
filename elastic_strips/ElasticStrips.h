@@ -89,6 +89,10 @@ class ElasticStrips : public ModuleBase
 
     NEWMAT::Matrix _Jr_quat;
 
+    NEWMAT::Matrix _tooltm;
+    TransformMatrix _TMtool;
+
+
     NEWMAT::Matrix _tasktm;
     NEWMAT::Matrix _E_rpy;
     NEWMAT::Matrix _E_rpy_inv;
@@ -112,6 +116,10 @@ class ElasticStrips : public ModuleBase
     NEWMAT::Matrix JXY;
     NEWMAT::Matrix JXYplus;
     NEWMAT::ColumnVector dxy;
+
+    NEWMAT::Matrix JXYZRPY;
+    NEWMAT::Matrix JXYZRPYplus;
+    NEWMAT::ColumnVector dxyzrpy;
     
     NEWMAT::Matrix JCOG;
     NEWMAT::Matrix JCOGplus;
@@ -129,6 +137,9 @@ class ElasticStrips : public ModuleBase
 
     NEWMAT::SymmetricMatrix Mxy;
     NEWMAT::SymmetricMatrix Mxyinv;
+
+    NEWMAT::SymmetricMatrix Mxyzrpy;
+    NEWMAT::SymmetricMatrix Mxyzrpyinv;
 
     NEWMAT::SymmetricMatrix Mcog;
     NEWMAT::SymmetricMatrix Mcoginv;
@@ -148,6 +159,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix Regoa;
     NEWMAT::DiagonalMatrix Regxy;
     NEWMAT::DiagonalMatrix Regzrpy;
+    NEWMAT::DiagonalMatrix Regxyzrpy;
     NEWMAT::DiagonalMatrix Regcog;
     NEWMAT::DiagonalMatrix Regpc;
 
@@ -166,6 +178,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::ColumnVector oa_step;
     NEWMAT::ColumnVector zrpy_step;
     NEWMAT::ColumnVector xy_step;
+    NEWMAT::ColumnVector xyzrpy_step;
     NEWMAT::ColumnVector pc_step;
     NEWMAT::ColumnVector m_step;
     NEWMAT::ColumnVector step;
@@ -191,7 +204,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix _S;
     NEWMAT::Matrix _V;
 
-    dReal epsilon = 0.003; //error tolerance for manipulator pose constraint
+    dReal epsilon = 0.005; //error tolerance for manipulator pose constraint
     dReal xy_error;
     dReal z_error;
     dReal rpy_error;
