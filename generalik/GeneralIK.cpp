@@ -292,6 +292,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         balance_mode = BALANCE_SUPPORT_POLYGON;
     }
     else if (support_mode == 2) {
+        RAVELOG_INFO("Support mode: Gravito-Inertial Wrench Cone\n");
         if (bPRINT)
             RAVELOG_INFO("Support mode: Gravito-Inertial Wrench Cone\n");
 
@@ -320,6 +321,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     }
     else
     {
+        RAVELOG_INFO("Support mode: NONE\n");
         balance_mode = BALANCE_NONE;
     }
 
@@ -805,10 +807,9 @@ bool GeneralIK::CheckSupport(Vector center)
             //     min_value = result(i);
             // }
         }
-        // cout<<min_value<<endl;
-
-        if(bDRAW)
+        if(bDRAW){
             graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(cogtarg)[0]), 1, 0, 10, Vector(0, 0, 1) ));
+        }
     }
     solutionpath.push_back(center);
     //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
@@ -1062,8 +1063,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
     std::vector<dReal> q_s_backup = q_s;
     //initialize stepsize and epsilon
     //maxstep = 0.1*_targtms.size();
-    maxstep = 0.1*_targtms.size();
-    stepsize = maxstep;
+    maxstep = _targtms.size();
+    stepsize = 10*maxstep;
+    //epsilon = 0.001;
     epsilon = 0.001;
     q_s_old = q_s;
     bClearBadJoints = true; //setting this to true will make the algorithm attempt to move joints that are at joint limits at every iteration
@@ -1077,6 +1079,13 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             graphptrs.push_back(GetEnv()->plot3( &(DoubleVectorToFloatVector(_targtms[i].trans)[0]), 1, 0, 5, Vector(0,1,0) ));
         }
     }
+    //if(!CheckSupport(cogtarg)){
+    //    RAVELOG_INFO("#### Not good COM...\n");
+    //    return false;
+    //}else{
+    //    RAVELOG_INFO("#### good COM...\n");
+    //    return true;
+    //}
 
     // std::multimap<string,Vector> control_points;
     // if(bOBSTACLE_AVOIDANCE)
@@ -1183,9 +1192,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             double dist_target_com = sqrtf((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x)
                     +(curcog.y-cogtarg.y)*(curcog.y-cogtarg.y)
                     +(curcog.z-cogtarg.z)*(curcog.z-cogtarg.z));
-            if(dist_target_com > 0.05){
-                    x_error += dist_target_com;
-            }
+            //if(dist_target_com > 0.05){
+                    //x_error += dist_target_com;
+            //}
 
             if(bPRINT){
                 RAVELOG_INFO("x error: %f dist cog: %f\n",x_error,dist_target_com);
@@ -1197,11 +1206,26 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             {
                 if(bPRINT)
                     RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
+                 RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
+                 RAVELOG_INFO("valid cog: %f %f %f\n",curcog.x,curcog.y,curcog.z);
+
+                 RAVELOG_INFO("cog: %f", CheckSupport(curcog));
+            //if(!CheckSupport(cogtarg)){
+                 //RAVELOG_INFO("no support cog: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);
+                 //return false;
+            //}
                 return true;
             }
             if(bPRINT){
                 RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
             }
+
+            //RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
+            //RAVELOG_INFO("COG : cur %f %f %f targ %f %f %f\n",curcog.x,curcog.y,curcog.z,cogtarg.x,cogtarg.y,cogtarg.z);
+            //if(!CheckSupport(cogtarg)){
+               //RAVELOG_INFO("no support cog: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);
+               //return false;
+            //}
 
             //only need to compute the jacobian once if there are joint limit problems
             if(bLimit == false)
@@ -1213,41 +1237,41 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     GetFullJacobian(_curtms[i],_targtms[i],Jtemp);
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
                 }
-                //if(balance_mode != BALANCE_NONE)
-                //{
-                //    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
-                //    GetCOGJacobian(Transform(),JtempBalance,curcog);
-                //    //bBalanceGradient = true;
-                //    //x_error += dist_target_com;
-                //    if(!CheckSupport(curcog)){
-                //        bBalanceGradient = true;
-                //        balancedx(1) = (curcog.x - cogtarg.x);
-                //        balancedx(2) = (curcog.y - cogtarg.y);
-                //        balancedx(3) = (curcog.z - cogtarg.z);
-                //    }else{
-                //        bBalanceGradient = false;
-                //        balancedx(1) = 0;
-                //        balancedx(2) = 0;
-                //        balancedx(3) = 0;
-                //    }
-                //}
+                if(balance_mode != BALANCE_NONE)
+                {
+                    //the cog jacobian should only be 2 dimensional, b/c we don't care about z
+                    GetCOGJacobian(Transform(),JtempBalance,curcog);
+                    bBalanceGradient = true;
+                    //x_error += dist_target_com;
+                    if(!CheckSupport(curcog)){
+                        bBalanceGradient = true;
+                        balancedx(1) = (curcog.x - cogtarg.x);
+                        balancedx(2) = (curcog.y - cogtarg.y);
+                        balancedx(3) = (curcog.z - cogtarg.z);
+                    }else{
+                        bBalanceGradient = false;
+                        balancedx(1) = 0;
+                        balancedx(2) = 0;
+                        balancedx(3) = 0;
+                    }
+                }
 
             }
-            if(balance_mode != BALANCE_NONE)
-            {
-                GetCOGJacobian(Transform(),JtempBalance,curcog);
-                if(dist_target_com > 0.01){
-                        x_error += dist_target_com;
-                }
-                //balancedx(1) = 1*(curcog.x - cogtarg.x);
-                //balancedx(2) = 1*(curcog.y - cogtarg.y);
-                //balancedx(3) = 1*(curcog.z - cogtarg.z);
-                bBalanceGradient = true;
-                balancedx(1) = 1*(curcog.x - cogtarg.x);
-                balancedx(2) = 1*(curcog.y - cogtarg.y);
-                //balancedx(2) = 0;
-                balancedx(3) = 1*(curcog.z - cogtarg.z);
-            }
+            //if(balance_mode != BALANCE_NONE)
+            //{
+            //    GetCOGJacobian(Transform(),JtempBalance,curcog);
+            //    if(dist_target_com > 0.01){
+            //            x_error += dist_target_com;
+            //    }
+            //    //balancedx(1) = 1*(curcog.x - cogtarg.x);
+            //    //balancedx(2) = 1*(curcog.y - cogtarg.y);
+            //    //balancedx(3) = 1*(curcog.z - cogtarg.z);
+            //    //
+            //    bBalanceGradient = true;
+            //    balancedx(1) = (curcog.x - cogtarg.x);
+            //    balancedx(2) = (curcog.y - cogtarg.y);
+            //    balancedx(3) = (curcog.z - cogtarg.z);
+            //}
 
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
