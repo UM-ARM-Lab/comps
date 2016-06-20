@@ -204,7 +204,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix _S;
     NEWMAT::Matrix _V;
 
-    dReal epsilon = 0.005; //error tolerance for manipulator pose constraint
+    dReal epsilon = 0.01; //error tolerance for manipulator pose constraint
     dReal xy_error;
     dReal z_error;
     dReal rpy_error;

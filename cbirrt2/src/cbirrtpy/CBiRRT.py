@@ -335,16 +335,16 @@ class CBiRRT(object):
         cmd = ["DoGeneralIK"]
         """:type : list[int | float | str]"""
 
-        if execute is not None:
+        if execute is True:
             cmd.append("exec")
 
-        if gettime is not None:
+        if gettime is True:
             cmd.append("gettime")
 
-        if norot is not None:
+        if norot is True:
             cmd.append("norot")
 
-        if returnclosest is not None:
+        if returnclosest is True:
             cmd.append("returnclosest")
 
         if robottm is not None:

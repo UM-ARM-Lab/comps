@@ -512,6 +512,8 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
             handles.push_back(_esEnv->drawarrow(mt_origin, mt_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
         }
 
+        // getchar();
+
         contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
 
         contact_consistent_transform.trans = contact_consistent_translation;
@@ -630,14 +632,16 @@ void ElasticStrips::FindNearestContactRegion()
 
         TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
 
-        Vector crf_origin = contact_region_frame.trans;
-        Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
-        Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
-        Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
+        // Vector crf_origin = contact_region_frame.trans;
+        // Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
+        // Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
+        // Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
 
-        handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+        // getchar();
 
         Vector cct_origin = contact_consistent_transform.trans;
         TransformMatrix contact_consistent_transform_matrix = TransformMatrix(contact_consistent_transform);
@@ -649,6 +653,9 @@ void ElasticStrips::FindNearestContactRegion()
         handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
         handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
+        // cout<<"Contact consistent transform"<<endl;
+        // getchar();
+
         Vector ncct_origin = new_contact_consistent_transform.trans;
         TransformMatrix new_contact_consistent_transform_matrix = TransformMatrix(new_contact_consistent_transform);
         Vector ncct_x = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[0],new_contact_consistent_transform_matrix.m[4],new_contact_consistent_transform_matrix.m[8]);
@@ -659,11 +666,8 @@ void ElasticStrips::FindNearestContactRegion()
         handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
         handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
-
-
+        // cout<<"New contact consistent transform"<<endl;
         // getchar();
-
-
 
     }
 
@@ -1338,11 +1342,11 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         _Jp = _tasktm * _Jp0;
         _Jr = _tasktm * (-_Jr0);
 
-        JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
-        JZ.Row(1) = _Jp.Row(3);
+        // JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
+        // JZ.Row(1) = _Jp.Row(3);
 
         //convert current rotation to euler angles (RPY) 
-        // QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),_psi,_theta,_phi);
+        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),_psi,_theta,_phi);
         //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
         Cphi = cos(_phi);
@@ -1361,38 +1365,25 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
         JRPY = -_Jr_proper;
 
-        JZRPY.Row(i*4+1) = JZ.Row(1);
-        JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
+        // JZRPY.Row(i*4+1) = JZ.Row(1);
+        // JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
 
-        JXYZRPY.Rows(i*6+1,i*6+2) = _Jp.Rows(1,2);
-        JXYZRPY.Row(i*6+3) = JZ.Row(1);
+        JXYZRPY.Rows(i*6+1,i*6+3) = _Jp.Rows(1,3);
         JXYZRPY.Rows(i*6+4,i*6+6) = JRPY.Rows(1,3);
 
         // Step
         NEWMAT::ColumnVector ds;
         ds.ReSize(6);
 
-
         TransformDifference(ds.Store(), contact_consistent_point_frame, target_manip->GetTransform()*manip_offset_transform);
 
-        // if(strcmp(manip_name.c_str(),"l_arm") == 0 || strcmp(manip_name.c_str(),"r_arm") == 0)
-        // {
-        //     ds(1) = 0;
-        //     ds(2) = 0;
-        // }
-
-        // cout<<ds(1)<<' '<<ds(1)<<endl;
-
         //velocity, can be written as force
-        dxy(i*2+1) = ds(1);
-        dxy(i*2+2) = ds(2);
-        dzrpy(i*4+1) = ds(3);
-        dzrpy(i*4+2) = ds(4);
-        dzrpy(i*4+3) = ds(5);
-        dzrpy(i*4+4) = ds(6);
-        // dzrpy(i*4+2) = 0;
-        // dzrpy(i*4+3) = 0;
-        // dzrpy(i*4+4) = 0;
+        // dxy(i*2+1) = ds(1);
+        // dxy(i*2+2) = ds(2);
+        // dzrpy(i*4+1) = ds(3);
+        // dzrpy(i*4+2) = ds(4);
+        // dzrpy(i*4+3) = ds(5);
+        // dzrpy(i*4+4) = ds(6);
 
         dxyzrpy(i*6+1) = ds(1);
         dxyzrpy(i*6+2) = ds(2);
@@ -1450,15 +1441,15 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         // getchar();
     }
 
-    RemoveBadJointJacobianCols(JXY,w);
-    Mxy << JXY*JXY.t() + Regxy;
-    invConditioningBound(10000,Mxy,Mxyinv);
-    JXYplus = JXY.t()*Mxyinv;
+    // RemoveBadJointJacobianCols(JXY,w);
+    // Mxy << JXY*JXY.t() + Regxy;
+    // invConditioningBound(10000,Mxy,Mxyinv);
+    // JXYplus = JXY.t()*Mxyinv;
 
-    RemoveBadJointJacobianCols(JZRPY,w);
-    Mzrpy << JZRPY*JZRPY.t() + Regzrpy;
-    invConditioningBound(10000,Mzrpy,Mzrpyinv);
-    JZRPYplus = JZRPY.t()*Mzrpyinv;
+    // RemoveBadJointJacobianCols(JZRPY,w);
+    // Mzrpy << JZRPY*JZRPY.t() + Regzrpy;
+    // invConditioningBound(10000,Mzrpy,Mzrpyinv);
+    // JZRPYplus = JZRPY.t()*Mzrpyinv;
 
     RemoveBadJointJacobianCols(JXYZRPY,w);
     Mxyzrpy << JXYZRPY*JXYZRPY.t() + Regxyzrpy;
@@ -1490,8 +1481,8 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     z_error = sqrt(z_error);
     rpy_error = sqrt(rpy_error);
 
-    dxy = cxy * dxy;
-    dzrpy = czrpy * dzrpy;
+    // dxy = cxy * dxy;
+    // dzrpy = czrpy * dzrpy;
 
 }
 
@@ -1831,7 +1822,6 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
     {
         stepsize[i] = 0.01 * waypoint_manip_group_map.find(i)->second.size();
     }
-
            
     for(int k = 0; k < 200; k++) // modify the configuration
     {
@@ -2059,6 +2049,13 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 step = magnitude * step;
 
+                // if(k > 0 && step.Sum() < 0.001)
+                // {
+                //     result = PS_Failed;
+
+                //     return result;
+                // }
+
                 //add step and check for joint limits
                 bLimit = false;
                 for(int i = 0; i < _numdofs; i++)
@@ -2069,14 +2066,14 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                         RAVELOG_INFO("Link: %s, value: %f, step: %f, limit: %f <=> %f\n",_esRobot->GetJointFromDOFIndex(_esRobot->GetActiveDOFIndices()[i])->GetName().c_str(),qs_old[i],step(i+1),_lowerLimit[i],_upperLimit[i]);
                         
                         cout<<"over joint limit: "<<i<<endl;
-                        cout<<qs[i]<<"limit: ("<<_lowerLimit[i]<<","<<_upperLimit[i]<<")"<<endl;
+                        cout<<qs[i]<<", limit: ("<<_lowerLimit[i]<<","<<_upperLimit[i]<<")"<<endl;
 
                         if(qs[i] < _lowerLimit[i])
                             qs[i] = _lowerLimit[i];
                         if(qs[i] > _upperLimit[i])
                             qs[i] = _upperLimit[i];
 
-                        badjointinds.at(w).push_back(i); //note this will never add the same joint twice, even if bClearBadJoints = false
+                        badjointinds.at(w).push_back(i); //note this will never add the same joint twice
 
                         bLimit = true;
 
@@ -2106,11 +2103,13 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //         Vector cct_y = contact_consistent_transform.trans + 0.5 * Vector(contact_consistent_transform_matrix.m[1],contact_consistent_transform_matrix.m[5],contact_consistent_transform_matrix.m[9]);
                 //         Vector cct_z = contact_consistent_transform.trans + 0.5 * Vector(contact_consistent_transform_matrix.m[2],contact_consistent_transform_matrix.m[6],contact_consistent_transform_matrix.m[10]);
 
-                //         handles.push_back(_esEnv->drawarrow(cct_origin, cct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
-                //         handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
-                //         handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+                //         // handles.push_back(_esEnv->drawarrow(cct_origin, cct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+                //         // handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+                //         // handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
                 //         _esRobot->SetActiveDOFValues(qs_old);
+
 
                 //         RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
 
@@ -2119,28 +2118,29 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //         _esRobot->SetActiveDOFValues(qs);
 
                 //         Vector to_vec = target_manip->GetTransform().trans;
-                //         // to_vec.x = 20*(to_vec.x - from_vec.x) + from_vec.x;
-                //         // to_vec.y = 20*(to_vec.y - from_vec.y) + from_vec.y;
-                //         // to_vec.z = 20*(to_vec.z - from_vec.z) + from_vec.z;
+                //         to_vec.x = 20*(to_vec.x - from_vec.x) + from_vec.x;
+                //         to_vec.y = 20*(to_vec.y - from_vec.y) + from_vec.y;
+                //         to_vec.z = 20*(to_vec.z - from_vec.z) + from_vec.z;
 
-                //         handles.push_back(_esEnv->drawarrow(from_vec, to_vec, 0.012, RaveVector<float>(1, 1, 0, 1)));
 
-                //         NEWMAT::ColumnVector step_zrpy = JZRPYplus * dzrpy;
-                //         vector<dReal> qs_2(_numdofs);
+                //         // handles.push_back(_esEnv->drawarrow(from_vec, to_vec, 0.012, RaveVector<float>(1, 1, 0, 1)));
 
-                //         for(int i = 0; i < _numdofs; i++)
-                //         {
-                //             qs_2[i] = qs_old[i] - magnitude * step_zrpy(i+1);
-                //         }
+                //         // NEWMAT::ColumnVector step_zrpy = JZRPYplus * dzrpy;
+                //         // vector<dReal> qs_2(_numdofs);
 
-                //         _esRobot->SetActiveDOFValues(qs_2);
+                //         // for(int i = 0; i < _numdofs; i++)
+                //         // {
+                //         //     qs_2[i] = qs_old[i] - magnitude * step_zrpy(i+1);
+                //         // }
 
-                //         Vector to_vec_2 = target_manip->GetTransform().trans;
+                //         // _esRobot->SetActiveDOFValues(qs_2);
+
+                //         // Vector to_vec_2 = target_manip->GetTransform().trans;
                 //         // to_vec_2.x = 20*(to_vec_2.x - from_vec.x) + from_vec.x;
                 //         // to_vec_2.y = 20*(to_vec_2.y - from_vec.y) + from_vec.y;
                 //         // to_vec_2.z = 20*(to_vec_2.z - from_vec.z) + from_vec.z;
 
-                //         handles.push_back(_esEnv->drawarrow(from_vec, to_vec_2, 0.012, RaveVector<float>(0, 1, 1, 1)));
+                //         // handles.push_back(_esEnv->drawarrow(from_vec, to_vec_2, 0.012, RaveVector<float>(0, 1, 1, 1)));
 
                 //         cout<<manip_name<<": ("<<to_vec.x-from_vec.x<<","<<to_vec.y-from_vec.y<<","<<to_vec.z-from_vec.z<<")"<<endl;
 
@@ -2162,8 +2162,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 // xyz_error = prev_error[w];
                 // qs = qs_old;
             }
-            else
-                stepsize[w] = 0.1 * waypoint_manip_group_map.find(w)->second.size();
+            // else
+            //     stepsize[w] = 0.01 * waypoint_manip_group_map.find(w)->second.size();
 
             prev_error[w] = xyz_error;
 
@@ -2174,11 +2174,14 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             // cout<<endl;
 
             _esRobot->SetActiveDOFValues(qs);
+
             GetEnv()->UpdatePublishedBodies();
 
             ntraj->Insert(w,qs,_esRobot->GetActiveConfigurationSpecification());
 
             // getchar();
+
+            RAVELOG_INFO("=================================================\n");
         }
 
         // cout<<"Number of contact consistent positions: "<<contact_consistent_manip_translation.size()<<endl;
