@@ -9,6 +9,7 @@ class ContactManipGroup
 		string manip_name;
 		Transform contact_consistent_transform;
 		std::vector<size_t> waypoints;
+		std::set<int> avoid_contact_manip_group;
 };
 
 class ContactRegion

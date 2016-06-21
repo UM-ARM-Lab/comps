@@ -562,89 +562,179 @@ void ElasticStrips::FindNearestContactRegion()
 {
     std::map< int, ContactRegion > temp_nearest_contact_regions;
     std::vector<GraphHandlePtr> handles;
+    float contact_r = 0.142;
 
     for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
     {
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
         Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
-        ContactRegion nearest_contact_region;
 
+        std::vector<ContactRegion> candidate_contact_regions;
 
         if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
         {
-            nearest_contact_region = _contact_regions.at(_contact_regions.size() - 2);
+            candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 2));
         }
         else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
         {
-            nearest_contact_region = _contact_regions.at(_contact_regions.size() - 1);
+            candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 1));
         }
         else
         {
-            float nearest_dist = 9999.0;
+            candidate_contact_regions = _contact_regions;
+        }
 
-            for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
+        // cout<<candidate_contact_regions.size()<<endl;
+
+        float nearest_dist = 9999.0;
+        Transform final_contact_consistent_transform;
+        ContactRegion nearest_contact_region;
+        bool collision_free_contact_exist = false;
+
+        for(std::vector<ContactRegion>::iterator cr_it = candidate_contact_regions.begin(); cr_it != candidate_contact_regions.end(); cr_it++)
+        {
+            float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
+
+            if(dist < nearest_dist || !collision_free_contact_exist)
             {
-                float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
+                // check if it will be in collision with previous contact groups
+                Transform temp_contact_region_frame = cr_it->contact_region_frame;
 
-                if(dist < nearest_dist)
+                Transform temp_projected_contact_consistent_transform = temp_contact_region_frame.inverse() * contact_consistent_transform;
+
+                temp_projected_contact_consistent_transform.trans.z = 0.0;
+
+                float dist_to_center = sqrt(temp_projected_contact_consistent_transform.trans.lengthsqr3());
+
+
+                if(dist_to_center > cr_it->radius)
+                {
+                    temp_projected_contact_consistent_transform.trans.x *= (cr_it->radius/dist_to_center);
+                    temp_projected_contact_consistent_transform.trans.y *= (cr_it->radius/dist_to_center);
+                }
+
+                Vector temp_projected_contact_consistent_transform_axis_angle = axisAngleFromQuat(temp_projected_contact_consistent_transform.rot);
+                temp_projected_contact_consistent_transform_axis_angle.x = 0.0;
+                temp_projected_contact_consistent_transform_axis_angle.y = 0.0;
+
+                temp_projected_contact_consistent_transform.rot = quatFromAxisAngle(temp_projected_contact_consistent_transform_axis_angle);
+
+                Transform new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
+
+                bool in_collision = false;
+
+                for(std::map< int, ContactManipGroup >::iterator cmg_it_2 = contact_manips_group.begin(); cmg_it_2 != cmg_it; cmg_it_2++)
+                {
+                    if(cmg_it->second.avoid_contact_manip_group.count(cmg_it_2->first) != 0)
+                    {
+                        // cout<<"checking collision!!"<<endl;
+
+                        bool in_collision_with_this_contact = false;
+
+                        Transform neighbor_contact_consistent_transform = cmg_it_2->second.contact_consistent_transform;
+
+                        Vector translation = neighbor_contact_consistent_transform.trans - new_contact_consistent_transform.trans;
+
+                        if(translation.lengthsqr3() != 0)
+                        {
+                            if(translation.lengthsqr3() < contact_r*contact_r)
+                            {
+                                translation = (1/sqrt(translation.lengthsqr3())) * translation;
+
+                                if(fabs(translation.dot3(cr_it->normal)) < 0.01)
+                                {
+                                    in_collision_with_this_contact = true;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            in_collision_with_this_contact = true;
+                        }
+
+                        if(in_collision_with_this_contact)
+                        {
+                            in_collision = true;
+                            if(cr_it->radius + sqrt((neighbor_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) > contact_r)
+                            {
+                                Transform projected_neighbor_contact_consistent_transform = temp_contact_region_frame.inverse() * neighbor_contact_consistent_transform;
+
+                                projected_neighbor_contact_consistent_transform.trans.z = 0.0;
+
+                                Transform new_projected_contact_consistent_transform;
+
+                                for(float ori = 0; ori < 360; ori = ori + 45)
+                                {
+                                    new_projected_contact_consistent_transform.trans.x = projected_neighbor_contact_consistent_transform.trans.x + contact_r * cos(3.1415926/180.0 * ori);
+                                    new_projected_contact_consistent_transform.trans.y = projected_neighbor_contact_consistent_transform.trans.y + contact_r * sin(3.1415926/180.0 * ori);
+                                    new_projected_contact_consistent_transform.trans.z = 0.0;
+
+                                    if(sqrt(new_projected_contact_consistent_transform.trans.lengthsqr2()) <= cr_it->radius)
+                                    {
+                                        new_projected_contact_consistent_transform.rot = temp_projected_contact_consistent_transform.rot;
+                                        Transform temp_new_contact_consistent_transform = temp_contact_region_frame * new_projected_contact_consistent_transform;
+                                        dist = sqrt((temp_new_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3()) + 0.5 * cr_it->OrientationDistToContactRegion(manip_name, contact_consistent_transform);
+                                        
+                                        if(dist < nearest_dist)
+                                        {
+                                            nearest_dist = dist;
+                                            final_contact_consistent_transform = temp_new_contact_consistent_transform;
+                                            collision_free_contact_exist = true;
+                                        }
+
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                }
+
+                if(!in_collision)
                 {
                     nearest_dist = dist;
                     nearest_contact_region = *cr_it;
+                    final_contact_consistent_transform = new_contact_consistent_transform;
+                    collision_free_contact_exist = true;
                 }
 
-                if(nearest_dist == 0.0)
+                if(!collision_free_contact_exist && dist < nearest_dist)
                 {
-                    break;
+                    nearest_dist = dist;
+                    nearest_contact_region = *cr_it;
+                    final_contact_consistent_transform = new_contact_consistent_transform;
                 }
+
+            }
+
+            if(nearest_dist == 0.0 && collision_free_contact_exist)
+            {
+                break;
             }
         }
 
-        temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
-
-        // project transform to the contact region
+        cmg_it->second.contact_consistent_transform = final_contact_consistent_transform;
 
         Transform contact_region_frame = nearest_contact_region.contact_region_frame;
 
-        Transform projected_contact_consistent_transform = contact_region_frame.inverse() * contact_consistent_transform;
+        temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
 
-        projected_contact_consistent_transform.trans.z = 0.0;
-
-        float dist_to_center = sqrt(projected_contact_consistent_transform.trans.lengthsqr3());
-
-
-        if(dist_to_center > nearest_contact_region.radius)
-        {
-            projected_contact_consistent_transform.trans.x *= (nearest_contact_region.radius/dist_to_center);
-            projected_contact_consistent_transform.trans.y *= (nearest_contact_region.radius/dist_to_center);
-        }
-
-        Vector projected_contact_consistent_transform_axis_angle = axisAngleFromQuat(projected_contact_consistent_transform.rot);
-        projected_contact_consistent_transform_axis_angle.x = 0.0;
-        projected_contact_consistent_transform_axis_angle.y = 0.0;
-
-
-        projected_contact_consistent_transform.rot = quatFromAxisAngle(projected_contact_consistent_transform_axis_angle);
-
-        cmg_it->second.contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
-
-        Transform new_contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
 
         TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
+        Vector crf_origin = contact_region_frame.trans;
+        Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
+        Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
+        Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
 
-        // Vector crf_origin = contact_region_frame.trans;
-        // Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
-        // Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
-        // Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
-
-        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
-        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
-        // handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
         // getchar();
 
-        Vector cct_origin = contact_consistent_transform.trans;
         TransformMatrix contact_consistent_transform_matrix = TransformMatrix(contact_consistent_transform);
+        Vector cct_origin = contact_consistent_transform.trans;
         Vector cct_x = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[0],contact_consistent_transform_matrix.m[4],contact_consistent_transform_matrix.m[8]);
         Vector cct_y = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[1],contact_consistent_transform_matrix.m[5],contact_consistent_transform_matrix.m[9]);
         Vector cct_z = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[2],contact_consistent_transform_matrix.m[6],contact_consistent_transform_matrix.m[10]);
@@ -656,15 +746,15 @@ void ElasticStrips::FindNearestContactRegion()
         // cout<<"Contact consistent transform"<<endl;
         // getchar();
 
-        Vector ncct_origin = new_contact_consistent_transform.trans;
-        TransformMatrix new_contact_consistent_transform_matrix = TransformMatrix(new_contact_consistent_transform);
-        Vector ncct_x = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[0],new_contact_consistent_transform_matrix.m[4],new_contact_consistent_transform_matrix.m[8]);
-        Vector ncct_y = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[1],new_contact_consistent_transform_matrix.m[5],new_contact_consistent_transform_matrix.m[9]);
-        Vector ncct_z = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[2],new_contact_consistent_transform_matrix.m[6],new_contact_consistent_transform_matrix.m[10]);
+        TransformMatrix final_contact_consistent_transform_matrix = TransformMatrix(final_contact_consistent_transform);
+        Vector fcct_origin = final_contact_consistent_transform.trans;
+        Vector fcct_x = final_contact_consistent_transform.trans + 0.5 * Vector(final_contact_consistent_transform_matrix.m[0],final_contact_consistent_transform_matrix.m[4],final_contact_consistent_transform_matrix.m[8]);
+        Vector fcct_y = final_contact_consistent_transform.trans + 0.5 * Vector(final_contact_consistent_transform_matrix.m[1],final_contact_consistent_transform_matrix.m[5],final_contact_consistent_transform_matrix.m[9]);
+        Vector fcct_z = final_contact_consistent_transform.trans + 0.5 * Vector(final_contact_consistent_transform_matrix.m[2],final_contact_consistent_transform_matrix.m[6],final_contact_consistent_transform_matrix.m[10]);
 
-        handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
-        handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+        handles.push_back(_esEnv->drawarrow(fcct_origin, fcct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(fcct_origin, fcct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+        handles.push_back(_esEnv->drawarrow(fcct_origin, fcct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
         // cout<<"New contact consistent transform"<<endl;
         // getchar();
@@ -675,6 +765,124 @@ void ElasticStrips::FindNearestContactRegion()
     nearest_contact_regions = temp_nearest_contact_regions;
 
 }
+
+// void ElasticStrips::FindNearestContactRegion()
+// {
+//     std::map< int, ContactRegion > temp_nearest_contact_regions;
+//     std::vector<GraphHandlePtr> handles;
+
+//     for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+//     {
+//         int contact_manip_group_index = cmg_it->first;
+//         string manip_name = cmg_it->second.manip_name;
+//         Transform contact_consistent_transform = cmg_it->second.contact_consistent_transform;
+//         ContactRegion nearest_contact_region;
+
+
+//         if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
+//         {
+//             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 2);
+//         }
+//         else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
+//         {
+//             nearest_contact_region = _contact_regions.at(_contact_regions.size() - 1);
+//         }
+//         else
+//         {
+//             float nearest_dist = 9999.0;
+
+//             for(std::vector<ContactRegion>::iterator cr_it = _contact_regions.begin(); cr_it != _contact_regions.end(); cr_it++)
+//             {
+//                 float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
+
+//                 if(dist < nearest_dist)
+//                 {
+//                     nearest_dist = dist;
+//                     nearest_contact_region = *cr_it;
+//                 }
+
+//                 if(nearest_dist == 0.0)
+//                 {
+//                     break;
+//                 }
+//             }
+//         }
+
+//         temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
+
+//         // project transform to the contact region
+
+//         Transform contact_region_frame = nearest_contact_region.contact_region_frame;
+
+//         Transform projected_contact_consistent_transform = contact_region_frame.inverse() * contact_consistent_transform;
+
+//         projected_contact_consistent_transform.trans.z = 0.0;
+
+//         float dist_to_center = sqrt(projected_contact_consistent_transform.trans.lengthsqr3());
+
+
+//         if(dist_to_center > nearest_contact_region.radius)
+//         {
+//             projected_contact_consistent_transform.trans.x *= (nearest_contact_region.radius/dist_to_center);
+//             projected_contact_consistent_transform.trans.y *= (nearest_contact_region.radius/dist_to_center);
+//         }
+
+//         Vector projected_contact_consistent_transform_axis_angle = axisAngleFromQuat(projected_contact_consistent_transform.rot);
+//         projected_contact_consistent_transform_axis_angle.x = 0.0;
+//         projected_contact_consistent_transform_axis_angle.y = 0.0;
+
+
+//         projected_contact_consistent_transform.rot = quatFromAxisAngle(projected_contact_consistent_transform_axis_angle);
+
+//         cmg_it->second.contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
+
+//         Transform new_contact_consistent_transform = contact_region_frame * projected_contact_consistent_transform;
+
+//         TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
+
+//         // Vector crf_origin = contact_region_frame.trans;
+//         // Vector crf_x = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[0],contact_region_frame_matrix.m[4],contact_region_frame_matrix.m[8]);
+//         // Vector crf_y = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[1],contact_region_frame_matrix.m[5],contact_region_frame_matrix.m[9]);
+//         // Vector crf_z = contact_region_frame.trans + 0.3 * Vector(contact_region_frame_matrix.m[2],contact_region_frame_matrix.m[6],contact_region_frame_matrix.m[10]);
+
+//         // handles.push_back(_esEnv->drawarrow(crf_origin, crf_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+//         // handles.push_back(_esEnv->drawarrow(crf_origin, crf_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+//         // handles.push_back(_esEnv->drawarrow(crf_origin, crf_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+//         // getchar();
+
+//         Vector cct_origin = contact_consistent_transform.trans;
+//         TransformMatrix contact_consistent_transform_matrix = TransformMatrix(contact_consistent_transform);
+//         Vector cct_x = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[0],contact_consistent_transform_matrix.m[4],contact_consistent_transform_matrix.m[8]);
+//         Vector cct_y = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[1],contact_consistent_transform_matrix.m[5],contact_consistent_transform_matrix.m[9]);
+//         Vector cct_z = contact_consistent_transform.trans + 0.4 * Vector(contact_consistent_transform_matrix.m[2],contact_consistent_transform_matrix.m[6],contact_consistent_transform_matrix.m[10]);
+
+//         handles.push_back(_esEnv->drawarrow(cct_origin, cct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+//         handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+//         handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+//         // cout<<"Contact consistent transform"<<endl;
+//         // getchar();
+
+//         Vector ncct_origin = new_contact_consistent_transform.trans;
+//         TransformMatrix new_contact_consistent_transform_matrix = TransformMatrix(new_contact_consistent_transform);
+//         Vector ncct_x = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[0],new_contact_consistent_transform_matrix.m[4],new_contact_consistent_transform_matrix.m[8]);
+//         Vector ncct_y = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[1],new_contact_consistent_transform_matrix.m[5],new_contact_consistent_transform_matrix.m[9]);
+//         Vector ncct_z = new_contact_consistent_transform.trans + 0.5 * Vector(new_contact_consistent_transform_matrix.m[2],new_contact_consistent_transform_matrix.m[6],new_contact_consistent_transform_matrix.m[10]);
+
+//         handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_x, 0.008, RaveVector<float>(1, 0, 0, 1)));
+//         handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
+//         handles.push_back(_esEnv->drawarrow(ncct_origin, ncct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
+
+//         // cout<<"New contact consistent transform"<<endl;
+//         // getchar();
+
+//     }
+
+
+//     nearest_contact_regions = temp_nearest_contact_regions;
+
+// }
 
 void ElasticStrips::FindContactRegions()
 {
@@ -858,7 +1066,7 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
 
             if(contact_manips_group.count(manip_group_index) != 0)
             {
-                contact_manips_group.find(manip_group_index)->second.waypoints.push_back(waypoint_index);
+                contact_manips_group.find(manip_group_index)->second.waypoints.push_back(waypoint_index);                
             }
             else
             {
@@ -866,6 +1074,15 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
                 ContactManipGroup cmg(manip_group_index, manip_name, Transform(), waypoint_indices);
                 contact_manips_group.insert(std::pair<int,ContactManipGroup>(manip_group_index,cmg));
             }
+
+            for(std::map<string,int>::iterator mngim_it_2 = manip_name_group_index_map.begin(); mngim_it_2 != manip_name_group_index_map.end(); mngim_it_2++)
+            {
+                if(manip_group_index != mngim_it_2->second)
+                {
+                    contact_manips_group.find(manip_group_index)->second.avoid_contact_manip_group.insert(mngim_it_2->second);
+                }
+            }
+
         }
     }
 
@@ -1823,7 +2040,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         stepsize[i] = 0.01 * waypoint_manip_group_map.find(i)->second.size();
     }
            
-    for(int k = 0; k < 200; k++) // modify the configuration
+    for(int k = 0; k < 50; k++) // modify the configuration
     {
         RAVELOG_INFO("Iteration: %i\n",k);
         TrajectoryBasePtr ntraj = RaveCreateTrajectory(GetEnv(),"");
