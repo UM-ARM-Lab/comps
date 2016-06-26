@@ -434,7 +434,7 @@ class CBiRRT(object):
         if printcommand:
             print(cmd_str)
 
-        result_str = self.problem.SendCommand(cmd_str)
+        result_str = self.problem.SendCommand(cmd_str,True) # releasegil = True
         result = [float(x) for x in result_str.split()]
 
         if gettime:

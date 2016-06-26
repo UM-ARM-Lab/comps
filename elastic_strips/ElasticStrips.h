@@ -41,6 +41,7 @@ class ElasticStrips : public ModuleBase
     void UpdateCOGJacobianandStep(Transform taskframe_in, size_t w);
     void UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w);
     void UpdatePCJacobianandStep(Transform taskframe_in, size_t w);
+    void UpdateINTJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w);
 
     void QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi);
     int invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed);
@@ -128,6 +129,10 @@ class ElasticStrips : public ModuleBase
     NEWMAT::Matrix JPC;
     NEWMAT::Matrix JPCplus;
     NEWMAT::ColumnVector dpc;
+
+    NEWMAT::Matrix JINT;
+    NEWMAT::Matrix JINTplus;
+    NEWMAT::ColumnVector dint;
     
     NEWMAT::SymmetricMatrix Moa;
     NEWMAT::SymmetricMatrix Moainv;
@@ -147,13 +152,18 @@ class ElasticStrips : public ModuleBase
     NEWMAT::SymmetricMatrix Mpc;
     NEWMAT::SymmetricMatrix Mpcinv;
 
+    NEWMAT::SymmetricMatrix Mint;
+    NEWMAT::SymmetricMatrix Mintinv;
+
+    NEWMAT::DiagonalMatrix W;
+    NEWMAT::DiagonalMatrix Winv;
+
     dReal cxy = 1;
     dReal czrpy = 1;
-    dReal ccog = 1;
+    dReal ccog = 0.2;
     dReal coa = 1;
     dReal cpc = 1;
-
-    dReal ce = 1;
+    dReal cint = 2;
 
 
     NEWMAT::DiagonalMatrix Regoa;
@@ -162,6 +172,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix Regxyzrpy;
     NEWMAT::DiagonalMatrix Regcog;
     NEWMAT::DiagonalMatrix Regpc;
+    NEWMAT::DiagonalMatrix Regint;
 
     NEWMAT::Matrix* JHP;
     NEWMAT::Matrix* JHPplus;
@@ -180,6 +191,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::ColumnVector xy_step;
     NEWMAT::ColumnVector xyzrpy_step;
     NEWMAT::ColumnVector pc_step;
+    NEWMAT::ColumnVector int_step;
     NEWMAT::ColumnVector m_step;
     NEWMAT::ColumnVector step;
     
@@ -204,7 +216,7 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix _S;
     NEWMAT::Matrix _V;
 
-    dReal epsilon = 0.01; //error tolerance for manipulator pose constraint
+    dReal epsilon = 0.005; //error tolerance for manipulator pose constraint
     dReal xy_error;
     dReal z_error;
     dReal rpy_error;
@@ -215,6 +227,8 @@ class ElasticStrips : public ModuleBase
     std::vector< std::vector<int> > badjointinds;
 
     std::map<string,int> GetManipIndex;
+
+    bool bPrint;
 
 };
 

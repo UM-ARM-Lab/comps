@@ -38,6 +38,7 @@ class ElasticStrips(object):
         print('ElasticStrips.py initialize')
 
         self.module = rave.RaveCreateModule(env,'ElasticStrips')
+
         env.AddModule(self.module,'')
         self.env = env
 
@@ -365,7 +366,7 @@ class ElasticStrips(object):
         if printcommand:
             print(cmd_str)
 
-        result_str = self.module.SendCommand(cmd_str)
+        result_str = self.module.SendCommand(cmd_str,True)
         result = [float(x) for x in result_str.split()]
 
         if gettime:

@@ -1,6 +1,8 @@
 #ifndef  BALANCE_H
 #define  BALANCE_H
 
+#define GMPRATIONAL 1
+
 #include <cdd/setoper.h>
 #include <cdd/cdd.h>
 
@@ -30,7 +32,7 @@ class Balance
 		};
 
 		void RefreshBalanceParameters(std::vector<dReal> q_new); // call it after the robot is in a new configuration, and before calling CheckSupport. Takes new config.
-		void RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links);
+		void RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links_manips);
 		bool CheckSupport(Vector center);
     	
 	private:
@@ -49,6 +51,10 @@ class Balance
 		std::vector<string> support_manips;
 		std::vector<dReal> support_mus;
 		NEWMAT::Matrix giwc;
+
+		std::map<string,NEWMAT::Matrix> giwc_database;
+
+		std::map<string,NEWMAT::Matrix> _computed_contact_surface_cones;
 
 		void InitializeBalanceParameters();
 

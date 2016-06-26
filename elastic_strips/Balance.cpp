@@ -25,41 +25,47 @@ Balance::Balance(RobotBasePtr r, Vector g, std::vector<string> s_manips, std::ve
 
 NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
 {
-    RobotBase::ManipulatorPtr p_manip = Robot->GetManipulator(manipname);
-    Vector manip_dir = p_manip->GetLocalToolDirection();
-
-    std::vector<Vector> support_points = GetSupportPoints(p_manip);
-    int num_points = support_points.size();
-
-    // Calculate combined friction cone matrix
-    int rows = CONE_DISCRETIZATION_RESOLUTION*num_points;
-    int cols = 3*num_points;
-    NEWMAT::Matrix f_cones_diagonal(rows, cols);
-    f_cones_diagonal = 0.0; // All non-filled spots should be 0
-
-    // Fill the diagonals
-    for (int i = 0; i < num_points; i++) {
-        GetFrictionCone(support_points[i], manip_dir, mu, &f_cones_diagonal, i*CONE_DISCRETIZATION_RESOLUTION, i*3, p_manip->GetTransform());
+    if(_computed_contact_surface_cones.count(manipname) != 0){
+        return _computed_contact_surface_cones.find(manipname)->second;
     }
+    else{
+        RobotBase::ManipulatorPtr p_manip = Robot->GetManipulator(manipname);
+        Vector manip_dir = p_manip->GetLocalToolDirection();
 
-    // Calculate A_surf matrix
-    NEWMAT::Matrix a_surf_stacked(cols, 6); // TODO: Rename `cols` because it's the rows here
+        std::vector<Vector> support_points = GetSupportPoints(p_manip);
+        int num_points = support_points.size();
 
-    for (int i = 0; i < num_points; i++) {
-        // Cone transform has no rotation relative to the manipulator's transform and is translated by
-        // the vector contained in support_points
-        Transform cone_tf;
-        cone_tf.trans = support_points[i];
-        GetASurf(p_manip, cone_tf, &a_surf_stacked, 3*i);
+        // Calculate combined friction cone matrix
+        int rows = CONE_DISCRETIZATION_RESOLUTION*num_points;
+        int cols = 3*num_points;
+        NEWMAT::Matrix f_cones_diagonal(rows, cols);
+        f_cones_diagonal = 0.0; // All non-filled spots should be 0
+
+        // Fill the diagonals
+        for (int i = 0; i < num_points; i++) {
+            GetFrictionCone(support_points[i], manip_dir, mu, &f_cones_diagonal, i*CONE_DISCRETIZATION_RESOLUTION, i*3, p_manip->GetTransform());
+        }
+
+        // Calculate A_surf matrix
+        NEWMAT::Matrix a_surf_stacked(cols, 6); // TODO: Rename `cols` because it's the rows here
+
+        for (int i = 0; i < num_points; i++) {
+            // Cone transform has no rotation relative to the manipulator's transform and is translated by
+            // the vector contained in support_points
+            Transform cone_tf;
+            cone_tf.trans = support_points[i];
+            GetASurf(p_manip, cone_tf, &a_surf_stacked, 3*i);
+        }
+
+        NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
+
+        _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,mat));
+
+        f_cones_diagonal.ReleaseAndDelete();
+        a_surf_stacked.ReleaseAndDelete();
+        mat.Release();
+        return mat;
     }
-
-    NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
-
-
-    f_cones_diagonal.ReleaseAndDelete();
-    a_surf_stacked.ReleaseAndDelete();
-    mat.Release();
-    return mat;
 }
 
 /// Returns the support points relative to the world frame
@@ -257,18 +263,19 @@ void Balance::GetGIWC()
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm();
 
 
-
     dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
     giwc_span_cdd->representation = dd_Generator;
 
     // TODO: Is there a better way than doing this?
     for (int r = 0; r < giwc_span.Nrows(); r++) {
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
-        dd_set_si(giwc_span_cdd->matrix[r][0], 0);
+        // dd_set_si(giwc_span_cdd->matrix[r][0], 0);
+        dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
         for (int c = 0; c < giwc_span.Ncols(); c++) {
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
             dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
+            // dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
         }
     }
 
@@ -283,17 +290,17 @@ void Balance::GetGIWC()
 
     giwc.ReSize(giwc_face_cdd->rowsize, 6);
 
-    for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
+    for (int row = 1; row <= giwc_face_cdd->rowsize; row++) {
         // Note this skips element 0 of each row, which should always be 0
-        for (int col = 1; col < giwc_face_cdd->colsize; col++) {
-            giwc(row, col-1) = dd_get_d(giwc_face_cdd->matrix[row][col]);
+        for (int col = 2; col <= giwc_face_cdd->colsize; col++) {
+            giwc(row, col-1) = dd_get_d(giwc_face_cdd->matrix[row-1][col-1]);
         }
     }
 
     giwc_span.ReleaseAndDelete();
     dd_FreeMatrix(giwc_face_cdd);
-    dd_FreeMatrix(giwc_span_cdd);
     dd_FreePolyhedra(poly);
+    dd_FreeMatrix(giwc_span_cdd);
     dd_free_global_constants();
 
 }
@@ -519,18 +526,69 @@ void Balance::RefreshBalanceParameters(std::vector<dReal> q_new)
 
 }
 
-void Balance::RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links)
+void Balance::RefreshBalanceParameters(std::vector<dReal> q_new, std::vector<string> s_links_manips)
 {
+
     Robot->SetActiveDOFValues(q_new);
-    supportlinks = s_links;
-    
+
     if(balance_mode == BALANCE_SUPPORT_POLYGON)
     {
+        supportlinks = s_links_manips;
         GetSupportPolygon();
     }
     else if(balance_mode == BALANCE_GIWC)
     {
-        GetGIWC();
+        bool same_support_manips = true;
+        if(support_manips.size() == s_links_manips.size())
+        {
+            for(int i = 0; i < support_manips.size(); i++)
+            {
+                if(strcmp(support_manips[i].c_str(), s_links_manips[i].c_str()) != 0)
+                {
+                    same_support_manips = false;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            same_support_manips = false;
+        }
+
+        if(!same_support_manips)
+        {
+            support_manips = s_links_manips;
+            dReal mu = support_mus[0];
+            support_mus.resize(support_manips.size(),mu);
+
+            string pose_code;
+            stringstream p;
+
+            for(int i = 0; i < support_manips.size(); i++)
+            {
+                string manip_name = support_manips[i];
+
+                p << manip_name << ",";
+
+                Transform manip_transform = Robot->GetManipulator(manip_name)->GetTransform();
+
+                p << int(round(manip_transform.trans.x*100)) << "," << int(round(manip_transform.trans.y*100)) << "," << int(round(manip_transform.trans.z*100)) << ",";
+
+                p << int(round(manip_transform.rot.x*100)) << "," << int(round(manip_transform.rot.y*100)) << "," << int(round(manip_transform.rot.z*100)) << "," << int(round(manip_transform.rot.w*100));
+
+                pose_code = p.str();
+            }
+
+            if(giwc_database.count(pose_code) == 0)
+            {
+                GetGIWC();
+                giwc_database.insert(std::pair<string,NEWMAT::Matrix>(pose_code,giwc));
+            }
+            else
+            {
+                giwc = giwc_database.find(pose_code)->second;                
+            }
+        }
     }
 
 }

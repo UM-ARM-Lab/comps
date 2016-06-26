@@ -1886,7 +1886,7 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
             // dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
-            dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * 10000));            
+            dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * 10000));
         }
     }
 
