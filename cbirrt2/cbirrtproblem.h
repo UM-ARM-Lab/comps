@@ -149,8 +149,11 @@ private:
     boost::shared_ptr<boost::thread> _plannerThread;
     enum PlannerState _plannerState;
     vector<KinBody::JointPtr> _limadj_joints; 
-    vector<vector<dReal> > _limadj_lowers; 
+    vector<vector<dReal> > _limadj_lowers;
     vector<vector<dReal> > _limadj_uppers;
+
+    std::vector<string> prev_support_manips;
+    std::vector<dReal> prev_giwc;
 
     std::map<string,NEWMAT::Matrix> _computed_contact_surface_cones;
 

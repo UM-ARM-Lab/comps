@@ -185,6 +185,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
     bool bReturnClosest = false;       // from returnclosest
     bool bObstacleAvoidance = false;   // from obstacle avoidance
     bool bCOG = false;                 // from balance
+    bool bReuseGIWC = false;           // from reusegiwc
     TransformMatrix robot_tf;          // from robottm
     TransformMatrix temp_tf_matrix; // Used in maniptm
     Transform temp_tf;              // Used in maniptm
@@ -275,6 +276,9 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
 
             ikparams.push_back(temp_tf.rot.x); ikparams.push_back(temp_tf.rot.y); ikparams.push_back(temp_tf.rot.z); ikparams.push_back(temp_tf.rot.w);
             ikparams.push_back(temp_tf.trans.x); ikparams.push_back(temp_tf.trans.y); ikparams.push_back(temp_tf.trans.z);
+
+
+
         }
         else if( stricmp(cmd.c_str(), "checkcollision") == 0 ) {
             bObstacleAvoidance = true;
@@ -377,6 +381,9 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             sinput >> gravity.y;
             sinput >> gravity.z;
         }
+        else if (stricmp(cmd.c_str(), "reusegiwc") == 0){
+            bReuseGIWC = true;
+        }
         else break;
 
         if( !sinput ) {
@@ -457,9 +464,44 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         ikparams.push_back(cogtarg.y);
         ikparams.push_back(cogtarg.z);
 
+        
+        bool same_support_manips = true;
+        if(support_manips.size() == prev_support_manips.size())
+        {
+            for(int i = 0; i < support_manips.size(); i++)
+            {
+                if(strcmp(support_manips[i].c_str(), prev_support_manips[i].c_str()) != 0)
+                {
+                    same_support_manips = false;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            same_support_manips = false;
+        }
+
         // unsigned long before_GIWC = timeGetTime();
 
-        GetGIWC(support_manips, support_mus, ikparams);
+        if(same_support_manips && bReuseGIWC)
+        {
+            // ikparams.reserve(ikparams.size() + distance(prev_giwc.begin(),prev_giwc.end()));
+            ikparams.insert(ikparams.end(),prev_giwc.begin(),prev_giwc.end());
+        }
+        else
+        {
+            GetGIWC(support_manips, support_mus, ikparams);
+        }
+
+        if(bReuseGIWC)
+        {
+            prev_support_manips = support_manips;
+        }
+        else
+        {
+            prev_support_manips.clear();
+        }        
 
         // int GIWC_timetaken = timeGetTime() - before_GIWC;
 
@@ -1917,12 +1959,15 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
     // f = getchar();
 
     // Add to ikparams
+    prev_giwc.clear();
     ikparams.push_back(giwc_face_cdd->rowsize);
+    prev_giwc.push_back(giwc_face_cdd->rowsize);
 
     for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
         // Note this skips element 0 of each row, which should always be 0
         for (int col = 1; col < giwc_face_cdd->colsize; col++) {
             ikparams.push_back(dd_get_d(giwc_face_cdd->matrix[row][col]));
+            prev_giwc.push_back(ikparams[ikparams.size()-1]);
         }
     }
 

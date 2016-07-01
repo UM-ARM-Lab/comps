@@ -158,12 +158,12 @@ class ElasticStrips : public ModuleBase
     NEWMAT::DiagonalMatrix W;
     NEWMAT::DiagonalMatrix Winv;
 
-    dReal cxy = 1;
-    dReal czrpy = 1;
+    dReal cxy = 1.0;
+    dReal czrpy = 1.0;
     dReal ccog = 0.2;
-    dReal coa = 1;
-    dReal cpc = 1;
-    dReal cint = 2;
+    dReal coa = 1.0;
+    dReal cpc = 1.0;
+    dReal cint = 1.0;
 
 
     NEWMAT::DiagonalMatrix Regoa;
@@ -229,6 +229,9 @@ class ElasticStrips : public ModuleBase
     std::map<string,int> GetManipIndex;
 
     bool bPrint;
+
+    std::set<string> exclude_control_points;
+    std::set<string> link_in_collision;
 
 };
 

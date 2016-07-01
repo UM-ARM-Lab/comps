@@ -91,6 +91,9 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     // Lock environment mutex
     // EnvironmentMutex::scoped_lock lockenv(GetEnv()->GetMutex());
 
+    bPrint = false;
+    // bPrint = true;
+
     boost::shared_ptr<ESParameters> params(new ESParameters());
     //params.reset(new ESParameters());
 
@@ -138,7 +141,8 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     TrajectoryBasePtr ptraj = RaveCreateTrajectory(GetEnv(),"");
     ptraj->Init(_esRobot->GetActiveConfigurationSpecification());
 
-    RAVELOG_INFO("Loading command\n");
+    if(bPrint)
+        RAVELOG_INFO("Loading command\n");
 
     // Command string holds the current command
     string cmd;
@@ -270,11 +274,18 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
                 sinput >> tempstring;
                 std::vector<KinBodyPtr> bodies;
                 GetEnv()->GetBodies(bodies);
+
+
+                Vector repulsive_vector;
+                sinput >> repulsive_vector.x;
+                sinput >> repulsive_vector.y;
+                sinput >> repulsive_vector.z;
+                
                 for(unsigned int j = 0; j < bodies.size(); j++)
                 {
                     if(stricmp(tempstring.c_str(),bodies[j]->GetName().c_str()) == 0)
                     {
-                        params->_esObstacle.push_back(bodies[j]);
+                        params->_esObstacle.push_back( std::make_pair(bodies[j],repulsive_vector) );
                         break;
                     }
                 }
@@ -357,11 +368,13 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
         }
     }
 
-    RAVELOG_INFO("Commmand loaded\n");
+    if(bPrint)
+        RAVELOG_INFO("Commmand loaded\n");
 
     if(params->balance_mode == BALANCE_SUPPORT_POLYGON)
     {
-        RAVELOG_INFO("Balance Mode: Support Polygon.\n");
+        if(bPrint)
+            RAVELOG_INFO("Balance Mode: Support Polygon.\n");
         if(supportlinks.size() == 0)
         {
             RAVELOG_INFO("ERROR: Must specify support links to do balancing\n");
@@ -374,22 +387,24 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     }
     else if(params->balance_mode == BALANCE_GIWC)
     {
-        RAVELOG_INFO("Balance Mode: GIWC.\n");
+        if(bPrint)
+            RAVELOG_INFO("Balance Mode: GIWC.\n");
         Balance b(_esRobot, gravity, support_manips, support_mus);
         balance_checker = b;
     }
 
-    RAVELOG_INFO("Balance checker initilize done.\n");
-
+    if(bPrint)
+        RAVELOG_INFO("Balance checker initilize done.\n");
 
     unsigned long starttime = timeGetTime();
 
-
-    RAVELOG_INFO("Initialize planning variables.\n");
+    if(bPrint)
+        RAVELOG_INFO("Initialize planning variables.\n");
 
     InitPlan(params);
 
-    RAVELOG_INFO("Planning variables initialized. Now start planning.\n");
+    if(bPrint)
+        RAVELOG_INFO("Planning variables initialized. Now start planning.\n");
     
     std::vector<dReal> qResult(_numdofs);
         
@@ -397,7 +412,8 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     {
 
         int timetaken = timeGetTime() - starttime;
-        RAVELOG_INFO("Num of waypoints: %i\n",ptraj->GetNumWaypoints());
+        if(bPrint)
+            RAVELOG_INFO("Num of waypoints: %i\n",ptraj->GetNumWaypoints());
         for(int w = 0; w < ptraj->GetNumWaypoints(); w++)
         {
             ptraj->GetWaypoint(w,qResult);
@@ -540,7 +556,10 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 
         contact_consistent_transform.trans = contact_consistent_translation;
 
-        contact_kinbody->SetTransform(contact_consistent_transform);
+        if(contact_kinbody)
+        {
+            contact_kinbody->SetTransform(contact_consistent_transform);
+        }
 
         // cout<<contact_kinbody_name<<": "<<contact_kinbody->GetTransform()<<endl;
 
@@ -714,9 +733,14 @@ void ElasticStrips::FindNearestContactRegion()
                                     {
                                         new_projected_contact_consistent_transform.rot = temp_projected_contact_consistent_transform.rot;
                                         Transform temp_new_contact_consistent_transform = temp_contact_region_frame * new_projected_contact_consistent_transform;
-                                        dist = sqrt((temp_new_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3()) + 0.5 * cr_it->OrientationDistToContactRegion(manip_name, contact_consistent_transform);
+                                        float trans_dist = sqrt((temp_new_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3());
+                                        float orient_dist = cr_it->OrientationDistToContactRegion(manip_name, contact_consistent_transform);
+                                        dist = trans_dist + 0.5 * orient_dist;
+
+                                        float trans_dist_between_neighbor_contact_consistent_transform = sqrt((neighbor_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3());
                                         
-                                        if(dist < nearest_dist)
+
+                                        if(dist < nearest_dist && (trans_dist < trans_dist_between_neighbor_contact_consistent_transform))
                                         {
                                             nearest_dist = dist;
                                             final_contact_consistent_transform = temp_new_contact_consistent_transform;
@@ -1061,9 +1085,6 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
 
     // bool bsuccess = true;
 
-    bPrint = false;
-    // bPrint = true;
-
     _parameters = params;
 
     _parameters->_internal_force_links.clear();
@@ -1194,149 +1215,49 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
 
 void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point)
 {
-    dReal repulse_dist = 1000;
     dReal repulse_constant = -1;
     Transform link_transform = _esRobot->GetLink(control_point->first)->GetTransform();
     Vector control_point_global_position = link_transform*control_point->second;
     repulsive_vector = Vector(0,0,0);
-    dReal shortest_dist = 100000000;
 
     //environment collision
-    for(std::vector<KinBodyPtr>::iterator obs_it = _parameters->_esObstacle.begin(); obs_it != _parameters->_esObstacle.end(); obs_it++)
+    for(std::vector< std::pair<KinBodyPtr,Vector> >::iterator obs_it = _parameters->_esObstacle.begin(); obs_it != _parameters->_esObstacle.end(); obs_it++)
     {
-        std::vector<KinBody::LinkPtr> ObstacleLink = (*obs_it)->GetLinks();
-        for(std::vector<KinBody::LinkPtr>::iterator link_it = ObstacleLink.begin(); link_it != ObstacleLink.end(); link_it++)
+        KinBodyPtr ObstacleKinBody = obs_it->first;
+        Vector obs_repulsive_vector = obs_it->second;
+        
+        if(GetEnv()->CheckCollision(_esRobot->GetLink(control_point->first),ObstacleKinBody->GetLinks()[0]))
         {
-            if(GetEnv()->CheckCollision(_esRobot->GetLink(control_point->first),(*link_it)))
-            {
-                std::vector<KinBody::Link::GeometryPtr> ObstacleGeometry = (*link_it)->GetGeometries();
-                for(std::vector<KinBody::Link::GeometryPtr>::iterator geom_it = ObstacleGeometry.begin(); geom_it != ObstacleGeometry.end(); geom_it++)
-                {
-                    GeometryType obstacle_geometry_type = (*geom_it)->GetType();
-                    RaveTransform<dReal> obstacle_geometry_transform = (*obs_it)->GetTransform() * (*link_it)->GetTransform() * (*geom_it)->GetTransform();
-                    RaveTransformMatrix<dReal> obstacle_rot_matrix = geometry::matrixFromQuat(obstacle_geometry_transform.rot);
-                    RaveTransformMatrix<dReal> inverse_obstacle_rot_matrix = obstacle_rot_matrix.inverse();
-                    RaveVector<dReal> obstacle_translation = obstacle_geometry_transform.trans;
-                    RaveVector<dReal> obstacle_frame_control_point_position = inverse_obstacle_rot_matrix * (control_point_global_position-obstacle_translation);
-                    dReal dist_to_obstacle = 0;
-                    RaveVector<dReal> repulsive_vector_component(0,0,0);
-                    RaveVector<dReal> nearest_point(0,0,0);
-                    if(obstacle_geometry_type == GT_Box)
-                    {
-                        Vector box_extents = (*geom_it)->GetBoxExtents();
-                        if(obstacle_frame_control_point_position.x > box_extents.x/2)
-                            nearest_point.x = box_extents.x/2;
-                        else if(obstacle_frame_control_point_position.x < -box_extents.x/2)
-                            nearest_point.x = -box_extents.x/2;
-                        else
-                            nearest_point.x = obstacle_frame_control_point_position.x;
-                        
-                        if(obstacle_frame_control_point_position.y > box_extents.y/2)
-                            nearest_point.y = box_extents.y/2;
-                        else if(obstacle_frame_control_point_position.y < -box_extents.y/2)
-                            nearest_point.y = -box_extents.y/2;
-                        else
-                            nearest_point.y = obstacle_frame_control_point_position.y;
+            // std::vector<KinBody::Link::GeometryPtr> ObstacleGeometry = (*link_it)->GetGeometries();
 
-                        if(obstacle_frame_control_point_position.z > box_extents.z/2)
-                            nearest_point.z = box_extents.z/2;
-                        else if(obstacle_frame_control_point_position.z < -box_extents.z/2)
-                            nearest_point.z = -box_extents.z/2;
-                        else
-                            nearest_point.z = obstacle_frame_control_point_position.z;
+            link_in_collision.insert(control_point->first);
 
-                        if(obstacle_frame_control_point_position.x != nearest_point.x ||
-                           obstacle_frame_control_point_position.y != nearest_point.y ||
-                           obstacle_frame_control_point_position.z != nearest_point.z)
-                        {
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());
-                            repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                        }
-                        else
-                        {
-                            nearest_point = RaveVector<dReal>(0,0,0);
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                            dist_to_obstacle = 0;
-                        }
-
-                    }
-                    else if(obstacle_geometry_type == GT_Sphere)
-                    {
-                        repulsive_vector_component = control_point_global_position - obstacle_translation;
-                        if(sqrt(repulsive_vector_component.lengthsqr3()) > (*geom_it)->GetSphereRadius())
-                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3()) - (*geom_it)->GetSphereRadius();
-                        else
-                            dist_to_obstacle = 0;
-                        repulsive_vector_component = repulsive_vector_component.normalize3();
-                    }
-                    else if(obstacle_geometry_type == GT_Cylinder)
-                    {
-                        dReal cylinder_height = (*geom_it)->GetCylinderHeight();
-                        dReal cylinder_radius = (*geom_it)->GetCylinderRadius();
-                        //RaveVector<dReal> nearest_point(0,0,0);
-                        dReal xy_dist_to_centroid = sqrt(pow(obstacle_frame_control_point_position.x,2) + pow(obstacle_frame_control_point_position.y,2));
-
-                        if(xy_dist_to_centroid > cylinder_radius || fabs(obstacle_frame_control_point_position.z) > cylinder_height/2)
-                        {
-                            nearest_point.x = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.x;
-                            nearest_point.y = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.y;
-
-                            if(obstacle_frame_control_point_position.z > cylinder_height/2)
-                                nearest_point.z = cylinder_height/2;
-                            else if(obstacle_frame_control_point_position.z < -cylinder_height/2)
-                                nearest_point.z = -cylinder_height/2;
-                            else
-                                nearest_point.z = obstacle_frame_control_point_position.z;
-
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());                    
-                        }
-                        else
-                        {
-                            nearest_point = RaveVector<dReal>(0,0,0);
-                            repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-                            dist_to_obstacle = 0;
-                        }
-
-                        repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
-                    }
-
-                    if(dist_to_obstacle < repulse_dist)
-                        repulsive_vector = repulsive_vector + repulsive_vector_component;
-
-                    if(dist_to_obstacle < shortest_dist)
-                        shortest_dist = dist_to_obstacle;
-
-                }
-
-            }
+            repulsive_vector = repulsive_vector + obs_repulsive_vector;
         }
     }
 
     //self collision
-    for(std::vector<std::pair<string,string> >::iterator sc_it = _parameters->_self_collision_checking_pairs.begin(); sc_it != _parameters->_self_collision_checking_pairs.end(); sc_it++)
-    {
-        string link_1 = (*sc_it).first;
-        string link_2 = (*sc_it).second;
-        if(control_point->first == link_1 || control_point->first == link_2)
-        {
-            if(GetEnv()->CheckCollision(_esRobot->GetLink(link_1),_esRobot->GetLink(link_2)))
-            {
-                RaveVector<dReal> repulsive_vector_component(0,0,0);
-                string other_link = (control_point->first == link_1) ? link_2 : link_1;
-                RaveVector<dReal> other_link_centroid = _esRobot->GetLink(other_link)->GetTransform().trans;
-                repulsive_vector_component = (control_point_global_position - other_link_centroid).normalize3();
-                repulsive_vector = repulsive_vector + repulsive_vector_component;
-                shortest_dist = 0;
-            }
-        }
-    }
+    // for(std::vector<std::pair<string,string> >::iterator sc_it = _parameters->_self_collision_checking_pairs.begin(); sc_it != _parameters->_self_collision_checking_pairs.end(); sc_it++)
+    // {
+    //     string link_1 = (*sc_it).first;
+    //     string link_2 = (*sc_it).second;
+    //     if(control_point->first == link_1 || control_point->first == link_2)
+    //     {
+    //         if(GetEnv()->CheckCollision(_esRobot->GetLink(link_1),_esRobot->GetLink(link_2)))
+    //         {
+    //             RaveVector<dReal> repulsive_vector_component(0,0,0);
+    //             string other_link = (control_point->first == link_1) ? link_2 : link_1;
+    //             RaveVector<dReal> other_link_centroid = _esRobot->GetLink(other_link)->GetTransform().trans;
+    //             repulsive_vector_component = (control_point_global_position - other_link_centroid).normalize3();
+    //             repulsive_vector = repulsive_vector + repulsive_vector_component;
+    //             shortest_dist = 0;
+    //         }
+    //     }
+    // }
 
     if(repulsive_vector.lengthsqr3() != 0)
     {
-        repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/sqrt(repulsive_vector.lengthsqr3()));
+        repulsive_vector = repulse_constant * repulsive_vector * (1/sqrt(repulsive_vector.lengthsqr3()));
         // cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
     }
 
@@ -1345,6 +1266,160 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
     //calculate the repulsive from each obstacle according to ther relative position and distance
     //sum the repulsive vector
 }
+
+// void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point)
+// {
+//     dReal repulse_dist = 1000;
+//     dReal repulse_constant = -1;
+//     Transform link_transform = _esRobot->GetLink(control_point->first)->GetTransform();
+//     Vector control_point_global_position = link_transform*control_point->second;
+//     repulsive_vector = Vector(0,0,0);
+//     dReal shortest_dist = 100000000;
+
+//     //environment collision
+//     for(std::vector<KinBodyPtr>::iterator obs_it = _parameters->_esObstacle.begin(); obs_it != _parameters->_esObstacle.end(); obs_it++)
+//     {
+//         std::vector<KinBody::LinkPtr> ObstacleLink = (*obs_it)->GetLinks();
+//         for(std::vector<KinBody::LinkPtr>::iterator link_it = ObstacleLink.begin(); link_it != ObstacleLink.end(); link_it++)
+//         {
+//             if(GetEnv()->CheckCollision(_esRobot->GetLink(control_point->first),(*link_it)))
+//             {
+//                 std::vector<KinBody::Link::GeometryPtr> ObstacleGeometry = (*link_it)->GetGeometries();
+//                 for(std::vector<KinBody::Link::GeometryPtr>::iterator geom_it = ObstacleGeometry.begin(); geom_it != ObstacleGeometry.end(); geom_it++)
+//                 {
+//                     GeometryType obstacle_geometry_type = (*geom_it)->GetType();
+//                     RaveTransform<dReal> obstacle_geometry_transform = (*obs_it)->GetTransform() * (*link_it)->GetTransform() * (*geom_it)->GetTransform();
+//                     RaveTransformMatrix<dReal> obstacle_rot_matrix = geometry::matrixFromQuat(obstacle_geometry_transform.rot);
+//                     RaveTransformMatrix<dReal> inverse_obstacle_rot_matrix = obstacle_rot_matrix.inverse();
+//                     RaveVector<dReal> obstacle_translation = obstacle_geometry_transform.trans;
+//                     RaveVector<dReal> obstacle_frame_control_point_position = inverse_obstacle_rot_matrix * (control_point_global_position-obstacle_translation);
+//                     dReal dist_to_obstacle = 0;
+//                     RaveVector<dReal> repulsive_vector_component(0,0,0);
+//                     RaveVector<dReal> nearest_point(0,0,0);
+//                     if(obstacle_geometry_type == GT_Box)
+//                     {
+//                         Vector box_extents = (*geom_it)->GetBoxExtents();
+//                         if(obstacle_frame_control_point_position.x > box_extents.x/2)
+//                             nearest_point.x = box_extents.x/2;
+//                         else if(obstacle_frame_control_point_position.x < -box_extents.x/2)
+//                             nearest_point.x = -box_extents.x/2;
+//                         else
+//                             nearest_point.x = obstacle_frame_control_point_position.x;
+                        
+//                         if(obstacle_frame_control_point_position.y > box_extents.y/2)
+//                             nearest_point.y = box_extents.y/2;
+//                         else if(obstacle_frame_control_point_position.y < -box_extents.y/2)
+//                             nearest_point.y = -box_extents.y/2;
+//                         else
+//                             nearest_point.y = obstacle_frame_control_point_position.y;
+
+//                         if(obstacle_frame_control_point_position.z > box_extents.z/2)
+//                             nearest_point.z = box_extents.z/2;
+//                         else if(obstacle_frame_control_point_position.z < -box_extents.z/2)
+//                             nearest_point.z = -box_extents.z/2;
+//                         else
+//                             nearest_point.z = obstacle_frame_control_point_position.z;
+
+//                         if(obstacle_frame_control_point_position.x != nearest_point.x ||
+//                            obstacle_frame_control_point_position.y != nearest_point.y ||
+//                            obstacle_frame_control_point_position.z != nearest_point.z)
+//                         {
+//                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
+//                             dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());
+//                             repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
+//                         }
+//                         else
+//                         {
+//                             nearest_point = RaveVector<dReal>(0,0,0);
+//                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
+//                             repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
+//                             dist_to_obstacle = 0;
+//                         }
+
+//                     }
+//                     else if(obstacle_geometry_type == GT_Sphere)
+//                     {
+//                         repulsive_vector_component = control_point_global_position - obstacle_translation;
+//                         if(sqrt(repulsive_vector_component.lengthsqr3()) > (*geom_it)->GetSphereRadius())
+//                             dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3()) - (*geom_it)->GetSphereRadius();
+//                         else
+//                             dist_to_obstacle = 0;
+//                         repulsive_vector_component = repulsive_vector_component.normalize3();
+//                     }
+//                     else if(obstacle_geometry_type == GT_Cylinder)
+//                     {
+//                         dReal cylinder_height = (*geom_it)->GetCylinderHeight();
+//                         dReal cylinder_radius = (*geom_it)->GetCylinderRadius();
+//                         //RaveVector<dReal> nearest_point(0,0,0);
+//                         dReal xy_dist_to_centroid = sqrt(pow(obstacle_frame_control_point_position.x,2) + pow(obstacle_frame_control_point_position.y,2));
+
+//                         if(xy_dist_to_centroid > cylinder_radius || fabs(obstacle_frame_control_point_position.z) > cylinder_height/2)
+//                         {
+//                             nearest_point.x = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.x;
+//                             nearest_point.y = (cylinder_radius/xy_dist_to_centroid) * obstacle_frame_control_point_position.y;
+
+//                             if(obstacle_frame_control_point_position.z > cylinder_height/2)
+//                                 nearest_point.z = cylinder_height/2;
+//                             else if(obstacle_frame_control_point_position.z < -cylinder_height/2)
+//                                 nearest_point.z = -cylinder_height/2;
+//                             else
+//                                 nearest_point.z = obstacle_frame_control_point_position.z;
+
+//                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
+//                             dist_to_obstacle = sqrt(repulsive_vector_component.lengthsqr3());                    
+//                         }
+//                         else
+//                         {
+//                             nearest_point = RaveVector<dReal>(0,0,0);
+//                             repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
+//                             dist_to_obstacle = 0;
+//                         }
+
+//                         repulsive_vector_component = (obstacle_rot_matrix*repulsive_vector_component).normalize3();
+//                     }
+
+//                     if(dist_to_obstacle < repulse_dist)
+//                         repulsive_vector = repulsive_vector + repulsive_vector_component;
+
+//                     if(dist_to_obstacle < shortest_dist)
+//                         shortest_dist = dist_to_obstacle;
+
+//                 }
+
+//             }
+//         }
+//     }
+
+//     //self collision
+//     for(std::vector<std::pair<string,string> >::iterator sc_it = _parameters->_self_collision_checking_pairs.begin(); sc_it != _parameters->_self_collision_checking_pairs.end(); sc_it++)
+//     {
+//         string link_1 = (*sc_it).first;
+//         string link_2 = (*sc_it).second;
+//         if(control_point->first == link_1 || control_point->first == link_2)
+//         {
+//             if(GetEnv()->CheckCollision(_esRobot->GetLink(link_1),_esRobot->GetLink(link_2)))
+//             {
+//                 RaveVector<dReal> repulsive_vector_component(0,0,0);
+//                 string other_link = (control_point->first == link_1) ? link_2 : link_1;
+//                 RaveVector<dReal> other_link_centroid = _esRobot->GetLink(other_link)->GetTransform().trans;
+//                 repulsive_vector_component = (control_point_global_position - other_link_centroid).normalize3();
+//                 repulsive_vector = repulsive_vector + repulsive_vector_component;
+//                 shortest_dist = 0;
+//             }
+//         }
+//     }
+
+//     if(repulsive_vector.lengthsqr3() != 0)
+//     {
+//         repulsive_vector = repulse_constant * exp(-shortest_dist) * repulsive_vector * (1/sqrt(repulsive_vector.lengthsqr3()));
+//         // cout<<"Link: "<<control_point->first<<", Repulsive Vector: ("<<repulsive_vector.x<<","<<repulsive_vector.y<<","<<repulsive_vector.z<<")"<<endl;
+//     }
+
+//     //for each obstacle, find its geometry type
+//     //calculate distance between the control point and the obstacle
+//     //calculate the repulsive from each obstacle according to ther relative position and distance
+//     //sum the repulsive vector
+// }
 
 void ElasticStrips::RemoveBadJointJacobianCols(NEWMAT::Matrix& J, size_t w)
 {
@@ -1529,6 +1604,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     map<string,int> manip_group_map = waypoint_manip_group_map.find(w)->second;
     map<string,int> prev_manip_group_map = manip_group_map;
     string new_contact_manip = "";
+    exclude_control_points.clear();
 
     if(w != 0)
     {
@@ -1595,18 +1671,26 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
             manip_offset_transform = l_arm_manip_transform_offset;
+            exclude_control_points.insert("l_palm");
+            exclude_control_points.insert("l_forearm");
         }
         else if(strcmp(manip_name.c_str(),"r_arm") == 0)
         {
             manip_offset_transform = r_arm_manip_transform_offset;
+            exclude_control_points.insert("r_palm");
+            exclude_control_points.insert("r_forearm");
         }
         else if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
             manip_offset_transform = l_leg_manip_transform_offset;
+            exclude_control_points.insert("l_foot");
+            exclude_control_points.insert("l_shin");
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
             manip_offset_transform = r_leg_manip_transform_offset;
+            exclude_control_points.insert("r_foot");
+            exclude_control_points.insert("r_shin");
         }
 
         // int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
@@ -1784,6 +1868,23 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     //     cogtarg.x = (l_foot_transform.x + r_foot_transform.x)/2.0;
     // }
 
+    // if(_parameters->balance_mode == BALANCE_GIWC)
+    // {
+    //     cout<<"desired manips: ";
+    //     for(std::map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++)
+    //     {
+    //         cout<<mgm_it->first<<" ";
+    //     }
+    //     cout<<endl;
+    //     cout<<"contact manips: ";
+    //     for(std::vector<string>::iterator sm_it = support_manips.begin(); sm_it != support_manips.end(); sm_it++)
+    //     {
+    //         cout<<*sm_it<<" ";
+    //     }
+    //     cout<<endl;
+    //     getchar();
+    // }
+
 
     if(_parameters->balance_mode == BALANCE_SUPPORT_POLYGON)
     {
@@ -1917,20 +2018,26 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
 
     bInCollision = false;
 
+    link_in_collision.clear();
+
     for(std::map<string,Vector>::iterator ctrl_it = _parameters->_control_points.begin(); ctrl_it != _parameters->_control_points.end(); ctrl_it++)
     {
+        // cout<<ctrl_it->first<<endl;
+        if(exclude_control_points.count(ctrl_it->first) == 1)
+        {
+            // cout<<"exclude: "<<ctrl_it->first<<endl;
+            continue;
+        }
+
         Vector repulsive_vector(0,0,0);
         GetRepulsiveVector(repulsive_vector, ctrl_it);
-
-        Vector internal_vector(0,0,0);
-        // GetInternalVector(internal_vector, ptraj, ctrl_it->first, w);
 
         if(repulsive_vector.lengthsqr3() != 0)
         {
             bInCollision = true;
         }
 
-        if(repulsive_vector.lengthsqr3() != 0 || internal_vector.lengthsqr3() != 0)
+        if(repulsive_vector.lengthsqr3() != 0)
         {
             _Jp.ReSize(3,_numdofs);
 
@@ -1948,7 +2055,7 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
             _Jp = _tasktm * _Jp0;
 
             control_points_in_movement.insert(*ctrl_it);
-            control_point_movement_vector.insert(std::pair<string,Vector>(ctrl_it->first,repulsive_vector+internal_vector));
+            control_point_movement_vector.insert(std::pair<string,Vector>(ctrl_it->first,repulsive_vector));
             control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,_Jp));
         }
     }
@@ -2181,7 +2288,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
     OpenRAVE::PlannerStatus result = PS_HasSolution;
     dReal maxstep, magnitude, xyz_error, total_error;
 
-    RAVELOG_INFO("Initialize posture control and balance variables.\n");
+    if(bPrint)
+        RAVELOG_INFO("Initialize posture control and balance variables.\n");
 
     // Initialize invaraint Jacobian dimension of each constriant.
     if(_parameters->bPOSTURE_CONTROL)
@@ -2240,7 +2348,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
     bool all_waypoints_stable;
 
-    RAVELOG_INFO("Elastic Strips main loop starts.\n");
+    if(bPrint)
+        RAVELOG_INFO("Elastic Strips main loop starts.\n");
 
     std::vector<size_t> once_stable_waypoint;
 
@@ -2255,7 +2364,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         stepsize[i] = 0.1 * waypoint_manip_group_map.find(i)->second.size();
     }
            
-    for(int k = 0; k < 50; k++) // modify the configuration
+    for(int k = 0; k < 40; k++) // modify the configuration
     {
         if(bPrint)
             RAVELOG_INFO("Iteration: %i\n",k);
@@ -2362,7 +2471,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 xyz_error = sqrt(pow(xy_error,2) + pow(z_error,2));
 
                 //may require another condition to check posture control
-                if((xyz_error < epsilon) &&
+                if((sqrt(pow(xyz_error,2) + pow(rpy_error,2)) < epsilon) &&
                    (_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog)) &&
                    (_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false))
                 {
@@ -2374,11 +2483,11 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 }
                 else
                 {
-                    // if(bPrint)
-                    if(true)
+                    if(bPrint)
+                    // if(true)
                     {
                         cout<<"Waypoint: "<<w<<endl;
-                        cout<<"Reach Point: "<<(xyz_error < epsilon)<<endl;
+                        cout<<"Reach Point: "<<(sqrt(pow(xyz_error,2) + pow(rpy_error,2)) < epsilon)<<endl;
                         cout<<"balanced: "<<(_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog))<<endl;
                         cout<<"free of collision: "<<(_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false)<<endl;
 
@@ -2390,12 +2499,24 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                         cout<<"curcog: "<<curcog.x<<", "<<curcog.y<<", "<<curcog.z<<endl;
                         cout<<"cogtarg: "<<cogtarg.x<<", "<<cogtarg.y<<", "<<cogtarg.z<<endl;
 
+                        cout<<"Link in collision: ";
+                        for(std::set<string>::iterator link_it = link_in_collision.begin(); link_it != link_in_collision.end(); link_it++)
+                        {
+                            cout<<(*link_it)<<" ";
+                        }
+                        cout<<endl;
+
                         cout<<"Joint in limit: ";
                         for(std::vector<int>::iterator it = badjointinds.at(w).begin(); it != badjointinds.at(w).end(); it++)
                         {
                             cout<<_esRobot->GetJointFromDOFIndex(_esRobot->GetActiveDOFIndices()[*it])->GetName()<<" ";
                         }
                         cout<<endl;
+
+                        // if(!link_in_collision.empty())
+                        // {
+                        //     getchar();
+                        // }
 
                         // if(_parameters->balance_mode != BALANCE_NONE)
                         // {
@@ -2473,18 +2594,18 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //     balance_step = pc_step;
                 // }
 
-                if(_parameters->bOBSTACLE_AVOIDANCE)
-                {
-                    oa_step = JOAplus*doa + (NEWMAT::IdentityMatrix(_numdofs) - JOAplus*JOA) * balance_step;
-                    highest_priority = "OA";
-                    // JHP = &JOA;
-                    // JHPplus = &JOAplus;
-                    // dhp = &doa;
-                }
-                else
-                {
-                    oa_step = pc_step;
-                }
+                // if(_parameters->bOBSTACLE_AVOIDANCE)
+                // {
+                //     oa_step = JOAplus*doa + (NEWMAT::IdentityMatrix(_numdofs) - JOAplus*JOA) * balance_step;
+                //     highest_priority = "OA";
+                //     // JHP = &JOA;
+                //     // JHPplus = &JOAplus;
+                //     // dhp = &doa;
+                // }
+                // else
+                // {
+                //     oa_step = pc_step;
+                // }
 
                 // if(strcmp(highest_priority.c_str(),"None") == 0)
                 if(_parameters->balance_mode == BALANCE_NONE)
@@ -2534,7 +2655,14 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 // m_step = JMplus*dm;
 
-                m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * int_step;
+                if(_parameters->bOBSTACLE_AVOIDANCE)
+                {
+                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * (JOAplus*doa + (NEWMAT::IdentityMatrix(_numdofs) - JOAplus*JOA) * int_step);
+                }
+                else
+                {
+                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * int_step;
+                }
 
                 // if(strcmp(highest_priority.c_str(),"None") == 0 or strcmp(highest_priority.c_str(),"PC") == 0)
                 // {
@@ -2671,16 +2799,28 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             if(bPrint)
                 RAVELOG_INFO("Move a step.\n");
 
-            if(xyz_error >= prev_error[w] && xyz_error > epsilon)
+            if(total_error >= prev_error[w] && !stable_waypoint.find(w)->second)
             {
                 stepsize[w] = stepsize[w]/2;
                 // xyz_error = prev_error[w];
                 // qs = qs_old;
             }
-            else
-                stepsize[w] = 0.01 * waypoint_manip_group_map.find(w)->second.size();
 
-            prev_error[w] = xyz_error;
+            prev_error[w] = total_error;
+            
+
+            // if(sqrt(pow(xyz_error,2) + pow(rpy_error,2)) >= prev_error[w] && !stable_waypoint.find(w)->second)
+            // {
+            //     stepsize[w] = stepsize[w]/2;
+            //     // xyz_error = prev_error[w];
+            //     // qs = qs_old;
+            // }
+            // else if(sqrt(pow(xyz_error,2) + pow(rpy_error,2)) < prev_error[w] && !stable_waypoint.find(w)->second)
+            // {
+            //     stepsize[w] = 0.1 * waypoint_manip_group_map.find(w)->second.size();
+            // }
+
+            // prev_error[w] = sqrt(pow(xyz_error,2) + pow(rpy_error,2));
 
             // for(int i = 0; i < qs.size(); i++)
             // {

@@ -19,7 +19,7 @@ class ESParameters
         std::vector<int> _targmanips;
         std::vector<Transform> _targtms;
 
-        std::vector<KinBodyPtr> _esObstacle;
+        std::vector< std::pair<KinBodyPtr,Vector> > _esObstacle;
         std::multimap<string,Vector> _control_points; //<link_name,local translation>
         std::vector<std::pair<string,string> > _self_collision_checking_pairs; //need another reading command from user input
         

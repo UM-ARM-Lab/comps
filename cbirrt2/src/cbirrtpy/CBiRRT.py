@@ -288,7 +288,7 @@ class CBiRRT(object):
 
     def DoGeneralIK(self, execute=None, gettime=None, norot=None, returnclosest=None, robottm=None, maniptm=None,
                     checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, movecog=None,
-                    supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, printcommand=False):
+                    supportlinks=None, polyscale=None, polytrans=None, support=None, gravity=None, reusegiwc=None, printcommand=False):
         """
         Get an IK solution with GeneralIK. In addition to these parameters, you can specify which DOF GeneralIK will
         use when planning by changing the active DOF
@@ -428,6 +428,9 @@ class CBiRRT(object):
             cmd.append(gravity[0])
             cmd.append(gravity[1])
             cmd.append(gravity[2])
+
+        if reusegiwc is True:
+            cmd.append("reusegiwc")
 
         cmd_str = " ".join(str(item) for item in cmd)
 

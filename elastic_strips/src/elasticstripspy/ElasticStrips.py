@@ -313,7 +313,13 @@ class ElasticStrips(object):
         if obstacles is not None:
             cmd.append("obstacles")
             cmd.append(len(obstacles))
-            cmd.extend(rave_object_name(l) for l in obstacles)
+            for obs in obstacles:
+                cmd.append(rave_object_name(obs[0]))
+                cmd.append(obs[1][0])
+                cmd.append(obs[1][1])
+                cmd.append(obs[1][2])
+            
+            # cmd.extend(rave_object_name(l) for l in obstacles)
 
         if posturecontrol is not None:
             cmd.append("posturecontrol")

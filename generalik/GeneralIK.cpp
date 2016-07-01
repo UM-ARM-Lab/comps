@@ -153,32 +153,46 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     Winv.ReSize(numdofs);
     W = 1.0;
     Winv = 1.0;
-    for(int i = 0; i < numdofs; i++)
-    {
-        int DOF_index = _pRobot->GetActiveDOFIndices()[i];
-        string DOF_name = _pRobot->GetJoints()[DOF_index]->GetName();
+    // for(int i = 0; i < numdofs; i++)
+    // {
+    //     int DOF_index = _pRobot->GetActiveDOFIndices()[i];
+    //     string DOF_name = _pRobot->GetJoints()[DOF_index]->GetName();
 
-        if(DOF_name == "l_knee_pitch" || DOF_name == "l_ankle_pitch" || DOF_name == "l_hip_pitch")
+    //     if(DOF_name == "l_knee_pitch" || DOF_name == "l_ankle_pitch" || DOF_name == "l_hip_pitch")
+    //     {
+    //         W(i+1) = 0.1;
+    //     }
+    //     else if(DOF_name == "r_knee_pitch" || DOF_name == "r_ankle_pitch" || DOF_name == "r_hip_pitch")
+    //     {
+    //         W(i+1) = 0.1;
+    //     }
+    //     else
+    //     {
+    //         W(i+1) = 10.0;
+    //     }
+
+    //     // if(DOF_name == "waist_yaw")
+    //     // {
+    //     //     W(i+1) = 0.01;
+    //     // }
+    //     // else
+    //     // {
+    //     //     W(i+1) = 10.0;
+    //     // }
+
+    //     Winv(i+1) = 1 / W(i+1);
+    // }
+
+    for(int i = 0; i < _numdofs; i++)
+    {
+        if(fabs(q_s[i] - _lowerLimit[i]) < 0.0001 || fabs(q_s[i] - _upperLimit[i]) < 0.0001)
         {
-            W(i+1) = 0.1;
-        }
-        else if(DOF_name == "r_knee_pitch" || DOF_name == "r_ankle_pitch" || DOF_name == "r_hip_pitch")
-        {
-            W(i+1) = 0.1;
+            W(i+1) = 0.25 * (_upperLimit[i]-_lowerLimit[i]) / 0.0001;
         }
         else
         {
-            W(i+1) = 10.0;
+            W(i+1) = 0.25 * pow((_upperLimit[i]-_lowerLimit[i]),2) / ((q_s[i] - _lowerLimit[i]) * (_upperLimit[i]-q_s[i]));
         }
-
-        // if(DOF_name == "waist_yaw")
-        // {
-        //     W(i+1) = 0.01;
-        // }
-        // else
-        // {
-        //     W(i+1) = 10.0;
-        // }
 
         Winv(i+1) = 1 / W(i+1);
     }
