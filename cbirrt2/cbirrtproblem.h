@@ -91,6 +91,9 @@ private:
     /// function for computing a 2D convex hull
     int convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut, int* numPointsOut);
 
+    /// function for computing a 6D convex hull
+    int convexHull6D(coordT* pointsIn, int numPointsIn, std::vector< std::vector<double> >& facet_coefficients);
+
     ///function to compute centroid of 2D polygon
     Point2D compute2DPolygonCentroid(const Point2D* vertices, int vertexCount);
 

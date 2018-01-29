@@ -32,27 +32,29 @@ class Balance
 		};
 
 		void RefreshBalanceParameters(std::vector<dReal> q_new); // call it after the robot is in a new configuration, and before calling CheckSupport. Takes new config.
-		void RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links_manips);
+		void RefreshBalanceParameters(std::vector<dReal> q_new, vector<string> s_links_manips, std::map<string,NEWMAT::Matrix>& giwc_database);
 		bool CheckSupport(Vector center);
     	
 	private:
-		BalanceMode balance_mode;
-		RobotBasePtr Robot;
+		BalanceMode _balance_mode;
+		RobotBasePtr _Robot;
 
 		//support polygon
-		std::vector<string> supportlinks;
-		Vector polyscale;
-		Vector polytrans;
-		std::vector<dReal> supportpolyx;
-		std::vector<dReal> supportpolyy;
+		std::vector<string> _supportlinks;
+		Vector _polyscale;
+		Vector _polytrans;
+		std::vector<dReal> _supportpolyx;
+		std::vector<dReal> _supportpolyy;
 
 		//GIWC
-		Vector gravity;
-		std::vector<string> support_manips;
-		std::vector<dReal> support_mus;
-		NEWMAT::Matrix giwc;
+		Vector _gravity;
+		std::vector<string> _support_manips;
+		std::vector<dReal> _support_mus;
+		NEWMAT::Matrix _giwc;
 
-		std::map<string,NEWMAT::Matrix> giwc_database;
+		//map index to support link / support manip
+		// std::map<int,string> _manip_index_name_map;
+		std::map<string,int> _manip_name_index_map;
 
 		std::map<string,NEWMAT::Matrix> _computed_contact_surface_cones;
 
@@ -60,6 +62,7 @@ class Balance
 
 		void GetSupportPolygon();
 		int convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut, int* numPointsOut);
+		int convexHull6D(coordT* pointsIn, int numPointsIn, std::vector< std::vector<double> >& facet_coefficients);
 		Balance::Point2D compute2DPolygonCentroid(const Balance::Point2D* vertices, int vertexCount);
 		
 		void GetGIWC();

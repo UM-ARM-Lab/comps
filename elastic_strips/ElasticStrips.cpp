@@ -37,6 +37,7 @@
  * pose constraints as Task Space Region (TSR) Chains. Pose constraints can apply to the start, goal, or entire path.
  * The planner is also set up to work with balance constraints.
  */
+#include <omp.h>
 #include <openrave/plugin.h>
 #include "stdafx.h"
 
@@ -64,23 +65,27 @@ OPENRAVE_PLUGIN_API void DestroyPlugin()
 }
 
 
-void ElasticStrips::SetActiveRobots(const std::vector<RobotBasePtr >& robots)
+void ElasticStrips::SetActiveRobots()
 {
 
-    if( robots.size() == 0 ) {
+    if( _esRobotVec.size() == 0 )
+    {
         RAVELOG_WARNA("No robots to plan for\n");
         return;
     }
 
     vector<RobotBasePtr >::const_iterator itrobot;
-    FORIT(itrobot, robots) {
-        if( strcmp((*itrobot)->GetName().c_str(), _strRobotName.c_str() ) == 0  ) {
+    FORIT(itrobot, _esRobotVec)
+    {
+        if( strcmp((*itrobot)->GetName().c_str(), _strRobotName.c_str() ) == 0  )
+        {
             _esRobot = *itrobot;
             break;
         }
     }
 
-    if( _esRobot == NULL ) {
+    if( _esRobot == NULL )
+    {
         RAVELOG_ERRORA("Failed to find %S\n", _strRobotName.c_str());
         return;
     }
@@ -107,10 +112,9 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     sinput >> _strRobotName;
     RAVELOG_INFO("Robot Name: %s\n",_strRobotName.c_str());
 
-    std::vector<RobotBasePtr> robots;
-
-    GetEnv()->GetRobots(robots);
-    SetActiveRobots(robots);
+    GetEnv()->GetRobots(_esRobotVec);
+    _num_robots = _esRobotVec.size();
+    SetActiveRobots();
 
     _numdofs = _esRobot->GetActiveDOF();
 
@@ -140,6 +144,7 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     // Store the trajectory
     TrajectoryBasePtr ptraj = RaveCreateTrajectory(GetEnv(),"");
     ptraj->Init(_esRobot->GetActiveConfigurationSpecification());
+
 
     if(bPrint)
         RAVELOG_INFO("Loading command\n");
@@ -188,57 +193,72 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
         else if(stricmp(cmd.c_str(), "desiredmanippose") == 0) {
             // Specify the desired pose of each configuration in the trajectory.
             // Index, Number of specified pose in the configuration, The transformation.
-            int temp_index;
-            int numspecifiedmanip;
-            int temp_manip_index;
-            dReal temp_contact_r;
-            sinput >> temp_index;
-            sinput >> numspecifiedmanip;
+            int num_desired_manip_pose;
 
-            std::map<string,std::pair<dReal,Transform> > temp_manip_pose;
-            for(int i = 0; i < numspecifiedmanip; i++)
+            sinput >> num_desired_manip_pose;
+
+            for(int i = 0; i < num_desired_manip_pose; i++)
             {
-                sinput >> temp_manip_index;
-                sinput >> temp_contact_r;
-                sinput >> temp_tf_matrix.m[0];
-                sinput >> temp_tf_matrix.m[4];
-                sinput >> temp_tf_matrix.m[8];
-                sinput >> temp_tf_matrix.m[1];
-                sinput >> temp_tf_matrix.m[5];
-                sinput >> temp_tf_matrix.m[9];
-                sinput >> temp_tf_matrix.m[2];
-                sinput >> temp_tf_matrix.m[6];
-                sinput >> temp_tf_matrix.m[10];
-                sinput >> temp_tf_matrix.trans.x;
-                sinput >> temp_tf_matrix.trans.y;
-                sinput >> temp_tf_matrix.trans.z;
-                temp_tf = Transform(temp_tf_matrix);
+                int temp_index;
+                int numspecifiedmanip;
+                int temp_manip_index;
+                dReal temp_contact_r;
+                sinput >> temp_index;
+                sinput >> numspecifiedmanip;
 
-                temp_manip_pose.insert(std::pair<string,std::pair<dReal,Transform> >(_esRobot->GetManipulators()[temp_manip_index]->GetName(), std::make_pair(temp_contact_r,temp_tf)));
+                std::map<string,std::pair<dReal,Transform> > temp_manip_pose;
+                for(int j = 0; j < numspecifiedmanip; j++)
+                {
+                    sinput >> temp_manip_index;
+                    sinput >> temp_contact_r;
+                    sinput >> temp_tf_matrix.m[0];
+                    sinput >> temp_tf_matrix.m[4];
+                    sinput >> temp_tf_matrix.m[8];
+                    sinput >> temp_tf_matrix.m[1];
+                    sinput >> temp_tf_matrix.m[5];
+                    sinput >> temp_tf_matrix.m[9];
+                    sinput >> temp_tf_matrix.m[2];
+                    sinput >> temp_tf_matrix.m[6];
+                    sinput >> temp_tf_matrix.m[10];
+                    sinput >> temp_tf_matrix.trans.x;
+                    sinput >> temp_tf_matrix.trans.y;
+                    sinput >> temp_tf_matrix.trans.z;
+                    temp_tf = Transform(temp_tf_matrix);
+
+                    temp_manip_pose.insert(std::pair<string,std::pair<dReal,Transform> >(_esRobot->GetManipulators()[temp_manip_index]->GetName(), std::make_pair(temp_contact_r,temp_tf)));
+                }
+
+                params->_desired_manip_pose.insert(std::pair<size_t, std::map<string,std::pair<dReal,Transform> > >(temp_index,temp_manip_pose));
             }
-
-            params->_desired_manip_pose.insert(std::pair<size_t, std::map<string,std::pair<dReal,Transform> > >(temp_index,temp_manip_pose));
 
         }
         else if(stricmp(cmd.c_str(), "contact_manips") == 0){
+            _waypoint_manip_group_map.clear();
+            
             int temp_index;
             int contact_manip_num;
             string manip_name;
             int group_index;
-            sinput >> temp_index;
-            sinput >> contact_manip_num;
-            std::vector<string> contact_manip;
 
-            std::map<string,int> manip_group_map;
-
-            for(int i = 0; i < contact_manip_num; i++)
+            sinput >> num_waypoints;
+            
+            for(int i = 0; i < num_waypoints; i++)
             {
-                sinput >> manip_name;
-                sinput >> group_index;
-                manip_group_map.insert(std::pair<string,int>(manip_name,group_index));
-            }
+                sinput >> temp_index;
+                sinput >> contact_manip_num;
+                // std::vector<string> contact_manip;
 
-            waypoint_manip_group_map.insert(std::pair< size_t, std::map<string,int> >(temp_index,manip_group_map));
+                std::map<string,int> manip_group_map;
+
+                for(int j = 0; j < contact_manip_num; j++)
+                {
+                    sinput >> manip_name;
+                    sinput >> group_index;
+                    manip_group_map.insert(std::pair<string,int>(manip_name,group_index));
+                }
+
+                _waypoint_manip_group_map.insert(std::pair< size_t, std::map<string,int> >(temp_index,manip_group_map));
+            }
 
         }
         else if(stricmp(cmd.c_str(), "checkcollision") == 0) {
@@ -371,6 +391,7 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     if(bPrint)
         RAVELOG_INFO("Commmand loaded\n");
 
+    _balance_checkers.resize(num_waypoints);
     if(params->balance_mode == BALANCE_SUPPORT_POLYGON)
     {
         if(bPrint)
@@ -381,16 +402,63 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
             return false;
         }
 
-        Balance b(_esRobot, supportlinks, polyscale, polytrans);
-        balance_checker = b;
+        std::map<string,int> link_name_index_map;
+        for(int i = 0; i < supportlinks.size(); i++)
+        {
+            link_name_index_map.insert(std::make_pair(supportlinks[i],i));
+        }
+
+        for(std::map< size_t, std::map<string,int> >::iterator wmgm_it = _waypoint_manip_group_map.begin(); wmgm_it != _waypoint_manip_group_map.end(); wmgm_it++)
+        {
+            size_t waypoint_index = wmgm_it->first;
+            std::map<string,int> manip_name_group_index_map = wmgm_it->second;
+
+            std::vector<string> waypoint_support_links;
+
+            for(std::map<string,int>::iterator mngim_it = manip_name_group_index_map.begin(); mngim_it != manip_name_group_index_map.end(); mngim_it++)
+            {
+                string manip_name = mngim_it->first;
+                int manip_index = link_name_index_map[manip_name];
+                waypoint_support_links.push_back(supportlinks[manip_index]);
+            }
+            
+            std::shared_ptr<Balance> b = std::make_shared<Balance>(_esRobotVec[waypoint_index%_num_robots], waypoint_support_links, polyscale, polytrans);
+            _balance_checkers[waypoint_index] = b;
+        }
 
     }
     else if(params->balance_mode == BALANCE_GIWC)
     {
         if(bPrint)
             RAVELOG_INFO("Balance Mode: GIWC.\n");
-        Balance b(_esRobot, gravity, support_manips, support_mus);
-        balance_checker = b;
+
+
+        std::map<string,int> manip_name_index_map;
+        for(int i = 0; i < support_manips.size(); i++)
+        {
+            manip_name_index_map.insert(std::make_pair(support_manips[i],i));
+        }
+
+        for(std::map< size_t, std::map<string,int> >::iterator wmgm_it = _waypoint_manip_group_map.begin(); wmgm_it != _waypoint_manip_group_map.end(); wmgm_it++)
+        {
+            size_t waypoint_index = wmgm_it->first;
+            std::map<string,int> manip_name_group_index_map = wmgm_it->second;
+
+            std::vector<dReal> waypoint_support_mus;
+            std::vector<string> waypoint_support_manips;
+
+            for(std::map<string,int>::iterator mngim_it = manip_name_group_index_map.begin(); mngim_it != manip_name_group_index_map.end(); mngim_it++)
+            {
+                string manip_name = mngim_it->first;
+                int manip_index = manip_name_index_map[manip_name];
+                waypoint_support_manips.push_back(support_manips[manip_index]);
+                waypoint_support_mus.push_back(support_mus[manip_index]);
+            }
+            
+            std::shared_ptr<Balance> b = std::make_shared<Balance>(_esRobotVec[waypoint_index%_num_robots], gravity, waypoint_support_manips, waypoint_support_mus);
+            _balance_checkers[waypoint_index] = b;
+        }
+        
     }
 
     if(bPrint)
@@ -441,18 +509,20 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     }
 }
 
-Transform ElasticStrips::ForwardKinematics(std::vector<dReal> qs,string manip_name)
+Transform ElasticStrips::ForwardKinematics(std::vector<dReal> qs, RobotBasePtr robot, string manip_name)
 {
-    _esRobot->SetActiveDOFValues(qs);
-    return _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second]->GetTransform();
+    // EnvironmentMutex::scoped_lock lockenv(_esEnv->GetMutex());
+    robot->SetActiveDOFValues(qs);
+    return robot->GetManipulators()[_GetManipIndex.find(manip_name)->second]->GetTransform();
 }
 
 void ElasticStrips::LoadContactRegions()
 {
     std::ifstream f_contact_region;
     // /yuchi_ws/escher_openrave/escher_openrave/scripts
-    f_contact_region.open("/home/yu-chi/flor_repo/catkin_ws/src/yuchi_ws/escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
+    f_contact_region.open("/home/yuchi/flor_repo/catkin_ws/src/yuchi_ws/escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
     string data_string;
+    _contact_regions.clear();
     while(getline(f_contact_region,data_string))
     {
         std::vector<float> data_vector;
@@ -484,7 +554,7 @@ void ElasticStrips::LoadContactRegions()
 
 void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 {
-    for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+    for(std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.begin(); cmg_it != _contact_manips_group.end(); cmg_it++)
     {
 
         std::vector<GraphHandlePtr> handles;
@@ -513,7 +583,7 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
             vector<dReal> qt;
             ptraj->GetWaypoint((*wi_it),qt);
 
-            Transform manip_transform = ForwardKinematics(qt,manip_name);
+            Transform manip_transform = ForwardKinematics(qt,_esRobot,manip_name);
 
             // axis_angle = axis_angle + (1.0/float(wp_indices.size())) * axisAngleFromQuat(manip_transform.rot);
             
@@ -565,19 +635,19 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 
         if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
-            contact_consistent_transform = contact_consistent_transform * l_arm_manip_transform_offset;
+            contact_consistent_transform = contact_consistent_transform * _l_arm_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"r_arm") == 0)
         {
-            contact_consistent_transform = contact_consistent_transform * r_arm_manip_transform_offset;
+            contact_consistent_transform = contact_consistent_transform * _r_arm_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
-            contact_consistent_transform = contact_consistent_transform * l_leg_manip_transform_offset;
+            contact_consistent_transform = contact_consistent_transform * _l_leg_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
-            contact_consistent_transform = contact_consistent_transform * r_leg_manip_transform_offset;
+            contact_consistent_transform = contact_consistent_transform * _r_leg_manip_transform_offset;
         }
 
         cmg_it->second.contact_consistent_transform = contact_consistent_transform;
@@ -605,7 +675,7 @@ void ElasticStrips::FindNearestContactRegion()
     std::vector<GraphHandlePtr> handles;
     float contact_r = 0.142 * 1.5;
 
-    for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+    for(std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.begin(); cmg_it != _contact_manips_group.end(); cmg_it++)
     {
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
@@ -613,18 +683,20 @@ void ElasticStrips::FindNearestContactRegion()
 
         std::vector<ContactRegion> candidate_contact_regions;
 
-        if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
-        {
-            candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 2));
-        }
-        else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
-        {
-            candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 1));
-        }
-        else
-        {
-            candidate_contact_regions = _contact_regions;
-        }
+        // Fix the starting and ending footsteps at the start and goal region
+        // if(contact_manip_group_index == start_contact_group_index[0] || contact_manip_group_index == start_contact_group_index[1])
+        // {
+        //     candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 2));
+        // }
+        // else if(contact_manip_group_index == goal_contact_group_index[0] || contact_manip_group_index == goal_contact_group_index[1])
+        // {
+        //     candidate_contact_regions.push_back(_contact_regions.at(_contact_regions.size() - 1));
+        // }
+        // else
+        // {
+        //     candidate_contact_regions = _contact_regions;
+        // }
+        candidate_contact_regions = _contact_regions;
 
         // cout<<candidate_contact_regions.size()<<endl;
 
@@ -683,7 +755,7 @@ void ElasticStrips::FindNearestContactRegion()
 
                 bool in_collision = false;
 
-                for(std::map< int, ContactManipGroup >::iterator cmg_it_2 = contact_manips_group.begin(); cmg_it_2 != cmg_it; cmg_it_2++)
+                for(std::map< int, ContactManipGroup >::iterator cmg_it_2 = _contact_manips_group.begin(); cmg_it_2 != cmg_it; cmg_it_2++)
                 {
                     if(cmg_it->second.avoid_contact_manip_group.count(cmg_it_2->first) != 0)
                     {
@@ -826,7 +898,7 @@ void ElasticStrips::FindNearestContactRegion()
     }
 
 
-    nearest_contact_regions = temp_nearest_contact_regions;
+    _nearest_contact_regions = temp_nearest_contact_regions;
 
 }
 
@@ -950,6 +1022,7 @@ void ElasticStrips::FindNearestContactRegion()
 
 void ElasticStrips::FindContactRegions()
 {
+    _contact_consistent_region.clear();
     for(map<size_t, map<string,std::pair<dReal,Transform> > >::iterator dmp_it = _parameters->_desired_manip_pose.begin(); dmp_it != _parameters->_desired_manip_pose.end(); dmp_it++) // all contact regions
     {
         map<string,int> temp_contact_region;
@@ -959,7 +1032,7 @@ void ElasticStrips::FindContactRegions()
             Vector desired_trans = p_it->second.second.trans;
             string desired_manip_name = p_it->first;
             // cout<<"desired manip name: "<<desired_manip_name<<", desired_trans: ("<<desired_trans.x<<","<<desired_trans.y<<","<<desired_trans.z<<")"<<endl;
-            for(std::vector< std::pair<string,Vector> >::iterator ccmt_it = contact_consistent_manip_translation.begin(); ccmt_it != contact_consistent_manip_translation.end(); ccmt_it++)
+            for(std::vector< std::pair<string,Vector> >::iterator ccmt_it = _contact_consistent_manip_translation.begin(); ccmt_it != _contact_consistent_manip_translation.end(); ccmt_it++)
             {
                 string temp_manip_name = ccmt_it->first;
                 Vector temp_contact_manip_trans = ccmt_it->second;
@@ -972,13 +1045,13 @@ void ElasticStrips::FindContactRegions()
                         // cout<<"manipulator: "<<temp_manip_name<<", desired_trans: ("<<desired_trans.x<<","<<desired_trans.y<<","<<desired_trans.z<<"), temp_contact_manip_trans: ("<<temp_contact_manip_trans.x<<","<<temp_contact_manip_trans.y<<","<<temp_contact_manip_trans.z<<")"<<endl;
                         map<size_t, map<string,std::pair<dReal,Transform> > >::iterator prev_dmp_it = dmp_it;
                         prev_dmp_it--;
-                        int contact_region_index = ccmt_it - contact_consistent_manip_translation.begin();
-                        if(contact_consistent_region.find(prev_dmp_it->first)->second.count(desired_manip_name) == 0)
+                        int contact_region_index = ccmt_it - _contact_consistent_manip_translation.begin();
+                        if(_contact_consistent_region[prev_dmp_it->first].count(desired_manip_name) == 0)
                         {
                             // cout<<"manipulator "<<desired_manip_name<<" is not in contact in the last waypoint"<<endl;
                             break;
                         }
-                        int p_contact_region_index = contact_consistent_region.find(prev_dmp_it->first)->second.find(desired_manip_name)->second;
+                        int p_contact_region_index = _contact_consistent_region[prev_dmp_it->first].find(desired_manip_name)->second;
                         // if the contact region index now is the same as the contact region index in the last waypoint with the same manip, it is clustered to the same contact.
                         // cout<<"contact region index: "<<contact_region_index<<", previous contact region index: "<<p_contact_region_index<<endl;
                         if(contact_region_index == p_contact_region_index)
@@ -995,25 +1068,25 @@ void ElasticStrips::FindContactRegions()
             if(!matched_contact_region_found)
             {
                 // cout<<"no matched contact region. add a new entry."<<endl;
-                temp_contact_region.insert(std::pair<string,int>(desired_manip_name, contact_consistent_manip_translation.size()));
-                contact_consistent_manip_translation.push_back(std::pair<string,Vector>(desired_manip_name,desired_trans));
+                temp_contact_region.insert(std::pair<string,int>(desired_manip_name, _contact_consistent_manip_translation.size()));
+                _contact_consistent_manip_translation.push_back(std::pair<string,Vector>(desired_manip_name,desired_trans));
             }
             // cout<<"contact_consistent_manip_translation size: "<<contact_consistent_manip_translation.size()<<endl;
         }
 
-        contact_consistent_region.insert(std::pair<size_t, std::map<string,int> >(dmp_it->first, temp_contact_region));
+        _contact_consistent_region.push_back(temp_contact_region);
     }
 }
 
 void ElasticStrips::FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj)
 {
-    std::vector< std::vector<Vector> > temp_contact_consistent_manip_translations(contact_consistent_manip_translation.size()); 
+    std::vector< std::vector<Vector> > temp_contact_consistent_manip_translations(_contact_consistent_manip_translation.size()); 
     for(unsigned int w = 0; w < ptraj->GetNumWaypoints(); w++)
     {
         vector<dReal> qt;
         ptraj->GetWaypoint(w,qt);
 
-        std::map<string,int> contact_regions = contact_consistent_region.find(w)->second;
+        std::map<string,int> contact_regions = _contact_consistent_region[w];
         
         for(std::map<string,int>::iterator cr_it = contact_regions.begin(); cr_it != contact_regions.end(); cr_it++)
         {
@@ -1021,7 +1094,7 @@ void ElasticStrips::FindContactConsistentManipTranslation(TrajectoryBasePtr ptra
             int temp_region_index = cr_it->second;
             Transform local_desired_pose_frame = _parameters->_desired_manip_pose.find(w)->second.find(temp_manip_name)->second.second;
             dReal contact_region_radius = _parameters->_desired_manip_pose.find(w)->second.find(temp_manip_name)->second.first;
-            Vector contact_position = ForwardKinematics(qt,temp_manip_name).trans;
+            Vector contact_position = ForwardKinematics(qt,_esRobot,temp_manip_name).trans;
             // cout<<"local_desired_pose_frame: "<<local_desired_pose_frame<<endl;
             // cout<<"contact_position: "<<contact_position.x<<" "<<contact_position.y<<" "<<contact_position.z<<endl;
             contact_position = local_desired_pose_frame.inverse() * contact_position;
@@ -1055,10 +1128,10 @@ void ElasticStrips::FindContactConsistentManipTranslation(TrajectoryBasePtr ptra
         v.z /= tccmt_it->size();
 
         if(tccmt_it->size() == 0)
-            cout<<"bug!!!"<<endl;
+            cout<<"temp_contact_consistent_manip_translation.size == 0, bug!!!"<<endl;
             getchar();
 
-        contact_consistent_manip_translation.at(contact_region_index).second = v;
+        _contact_consistent_manip_translation.at(contact_region_index).second = v;
     }
 }
 
@@ -1070,7 +1143,7 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
 
     for(int i = 0; i < _esRobot->GetManipulators().size(); i++)
     {
-        GetManipIndex.insert(std::pair<string,int>(_esRobot->GetManipulators()[i]->GetName(),i));
+        _GetManipIndex.insert(std::pair<string,int>(_esRobot->GetManipulators()[i]->GetName(),i));
     }
 
     //1. receive command
@@ -1104,31 +1177,31 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
     l_arm_manip_transform_offset_matrix.m[0] = 0; l_arm_manip_transform_offset_matrix.m[1] = 0; l_arm_manip_transform_offset_matrix.m[2] = -1;
     l_arm_manip_transform_offset_matrix.m[4] = 1; l_arm_manip_transform_offset_matrix.m[5] = 0; l_arm_manip_transform_offset_matrix.m[6] = 0;
     l_arm_manip_transform_offset_matrix.m[8] = 0; l_arm_manip_transform_offset_matrix.m[9] = -1; l_arm_manip_transform_offset_matrix.m[10] = 0;
-    l_arm_manip_transform_offset = Transform(l_arm_manip_transform_offset_matrix);
+    _l_arm_manip_transform_offset = Transform(l_arm_manip_transform_offset_matrix);
 
     TransformMatrix r_arm_manip_transform_offset_matrix;
     r_arm_manip_transform_offset_matrix.trans = Vector(0,0,0);
     r_arm_manip_transform_offset_matrix.m[0] = 0; r_arm_manip_transform_offset_matrix.m[1] = 0; r_arm_manip_transform_offset_matrix.m[2] = -1;
     r_arm_manip_transform_offset_matrix.m[4] = -1; r_arm_manip_transform_offset_matrix.m[5] = 0; r_arm_manip_transform_offset_matrix.m[6] = 0;
     r_arm_manip_transform_offset_matrix.m[8] = 0; r_arm_manip_transform_offset_matrix.m[9] = 1; r_arm_manip_transform_offset_matrix.m[10] = 0;
-    r_arm_manip_transform_offset = Transform(r_arm_manip_transform_offset_matrix);
+    _r_arm_manip_transform_offset = Transform(r_arm_manip_transform_offset_matrix);
 
     TransformMatrix l_leg_manip_transform_offset_matrix;
     l_leg_manip_transform_offset_matrix.trans = Vector(0,0,0);
     l_leg_manip_transform_offset_matrix.m[0] = 1; l_leg_manip_transform_offset_matrix.m[1] = 0; l_leg_manip_transform_offset_matrix.m[2] = 0;
     l_leg_manip_transform_offset_matrix.m[4] = 0; l_leg_manip_transform_offset_matrix.m[5] = 1; l_leg_manip_transform_offset_matrix.m[6] = 0;
     l_leg_manip_transform_offset_matrix.m[8] = 0; l_leg_manip_transform_offset_matrix.m[9] = 0; l_leg_manip_transform_offset_matrix.m[10] = 1;
-    l_leg_manip_transform_offset = Transform(l_leg_manip_transform_offset_matrix);
+    _l_leg_manip_transform_offset = Transform(l_leg_manip_transform_offset_matrix);
 
     TransformMatrix r_leg_manip_transform_offset_matrix;
     r_leg_manip_transform_offset_matrix.trans = Vector(0,0,0);
     r_leg_manip_transform_offset_matrix.m[0] = 1; r_leg_manip_transform_offset_matrix.m[1] = 0; r_leg_manip_transform_offset_matrix.m[2] = 0;
     r_leg_manip_transform_offset_matrix.m[4] = 0; r_leg_manip_transform_offset_matrix.m[5] = 1; r_leg_manip_transform_offset_matrix.m[6] = 0;
     r_leg_manip_transform_offset_matrix.m[8] = 0; r_leg_manip_transform_offset_matrix.m[9] = 0; r_leg_manip_transform_offset_matrix.m[10] = 1;
-    r_leg_manip_transform_offset = Transform(r_leg_manip_transform_offset_matrix);
+    _r_leg_manip_transform_offset = Transform(r_leg_manip_transform_offset_matrix);
 
 
-    for(std::map< size_t, std::map<string,int> >::iterator wmgm_it = waypoint_manip_group_map.begin(); wmgm_it != waypoint_manip_group_map.end(); wmgm_it++)
+    for(std::map< size_t, std::map<string,int> >::iterator wmgm_it = _waypoint_manip_group_map.begin(); wmgm_it != _waypoint_manip_group_map.end(); wmgm_it++)
     {
         size_t waypoint_index = wmgm_it->first;
         std::map<string,int> manip_name_group_index_map = wmgm_it->second;
@@ -1138,85 +1211,232 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
             string manip_name = mngim_it->first;
             int manip_group_index = mngim_it->second;
 
-            if(contact_manips_group.count(manip_group_index) != 0)
+            if(_contact_manips_group.count(manip_group_index) != 0)
             {
-                contact_manips_group.find(manip_group_index)->second.waypoints.push_back(waypoint_index);                
+                _contact_manips_group.find(manip_group_index)->second.waypoints.push_back(waypoint_index);                
             }
             else
             {
                 std::vector<size_t> waypoint_indices(1,waypoint_index);
                 ContactManipGroup cmg(manip_group_index, manip_name, Transform(), waypoint_indices);
-                contact_manips_group.insert(std::pair<int,ContactManipGroup>(manip_group_index,cmg));
+                _contact_manips_group.insert(std::pair<int,ContactManipGroup>(manip_group_index,cmg));
             }
 
             for(std::map<string,int>::iterator mngim_it_2 = manip_name_group_index_map.begin(); mngim_it_2 != manip_name_group_index_map.end(); mngim_it_2++)
             {
                 if(manip_group_index != mngim_it_2->second)
                 {
-                    contact_manips_group.find(manip_group_index)->second.avoid_contact_manip_group.insert(mngim_it_2->second);
+                    _contact_manips_group.find(manip_group_index)->second.avoid_contact_manip_group.insert(mngim_it_2->second);
                 }
             }
 
         }
     }
 
-    start_contact_group_index.resize(2);
-    start_contact_group_index[0] = 0;
-    start_contact_group_index[1] = 1;
-    goal_contact_group_index.resize(2);
+    _start_contact_group_index.resize(2);
+    _start_contact_group_index[0] = 0;
+    _start_contact_group_index[1] = 1;
+    _goal_contact_group_index.resize(2);
 
-    for(std::map< int, ContactManipGroup >::iterator cmg_it = contact_manips_group.begin(); cmg_it != contact_manips_group.end(); cmg_it++)
+    for(std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.begin(); cmg_it != _contact_manips_group.end(); cmg_it++)
     {
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
 
         if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
-            goal_contact_group_index[0] = contact_manip_group_index;
+            _goal_contact_group_index[0] = contact_manip_group_index;
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
-            goal_contact_group_index[1] = contact_manip_group_index;
+            _goal_contact_group_index[1] = contact_manip_group_index;
         }
     }
 
-    balance_step.ReSize(_numdofs);
-    balance_step = 0;
-    oa_step.ReSize(_numdofs);
-    oa_step = 0;
-    zrpy_step.ReSize(_numdofs);
-    zrpy_step = 0;
-    xy_step.ReSize(_numdofs);
-    xy_step = 0;
-    pc_step.ReSize(_numdofs);
-    pc_step = 0;
-    m_step.ReSize(_numdofs);
-    m_step = 0;
+    int num_waypoints = _waypoint_manip_group_map.size();
 
-    _tooltm.ReSize(3,3);
-    _tasktm.ReSize(3,3);
-    _E_rpy.ReSize(3,3);
+    // std::cout << "num_waypoints=" << num_waypoints << std::endl;
 
-    _Jp.ReSize(3,_numdofs);
-    _Jp0.ReSize(3,_numdofs);
+    _cogtargs.resize(num_waypoints);
+    _curcogs.resize(num_waypoints);
+    _Jp.resize(num_waypoints);
+    _Jp0.resize(num_waypoints);
+    _Jr.resize(num_waypoints);
+    _Jr0.resize(num_waypoints);
+    _Jr_proper.resize(num_waypoints);
+    _Jr_quat.resize(num_waypoints);
+    _tooltm.resize(num_waypoints);
+    _TMtool.resize(num_waypoints);
+    _tasktm.resize(num_waypoints);
+    _E_rpy.resize(num_waypoints);
+    _E_rpy_inv.resize(num_waypoints);
+    _TMtask.resize(num_waypoints);
+    _JOA.resize(num_waypoints);
+    _JOAplus.resize(num_waypoints);
+    _doa.resize(num_waypoints);
+    _JZ.resize(num_waypoints);
+    _JRPY.resize(num_waypoints);
+    _JZRPY.resize(num_waypoints);
+    _JZRPYplus.resize(num_waypoints);
+    _dzrpy.resize(num_waypoints);
+    _JXY.resize(num_waypoints);
+    _JXYplus.resize(num_waypoints);
+    _dxy.resize(num_waypoints);
+    _JXYZRPY.resize(num_waypoints);
+    _JXYZRPYplus.resize(num_waypoints);
+    _dxyzrpy.resize(num_waypoints);
+    _JCOG.resize(num_waypoints);
+    _JCOGplus.resize(num_waypoints);
+    _dcog.resize(num_waypoints);
+    _JPC.resize(num_waypoints);
+    _JPCplus.resize(num_waypoints);
+    _dpc.resize(num_waypoints);
+    _JINT.resize(num_waypoints);
+    _JINTplus.resize(num_waypoints);
+    _dint.resize(num_waypoints);
+    _Moa.resize(num_waypoints);
+    _Moainv.resize(num_waypoints);
+    _Mzrpy.resize(num_waypoints);
+    _Mzrpyinv.resize(num_waypoints);
+    _Mxy.resize(num_waypoints);
+    _Mxyinv.resize(num_waypoints);
+    _Mxyzrpy.resize(num_waypoints);
+    _Mxyzrpyinv.resize(num_waypoints);
+    _Mcog.resize(num_waypoints);
+    _Mcoginv.resize(num_waypoints);
+    _Mpc.resize(num_waypoints);
+    _Mpcinv.resize(num_waypoints);
+    _Mint.resize(num_waypoints);
+    _Mintinv.resize(num_waypoints);
+    _W.resize(num_waypoints);
+    _Winv.resize(num_waypoints);
+    _Regoa.resize(num_waypoints);
+    _Regxy.resize(num_waypoints);
+    _Regzrpy.resize(num_waypoints);
+    _Regxyzrpy.resize(num_waypoints);
+    _Regcog.resize(num_waypoints);
+    _Regpc.resize(num_waypoints);
+    _Regint.resize(num_waypoints);
+    _JHP.resize(num_waypoints);
+    _JHPplus.resize(num_waypoints);
+    _dhp.resize(num_waypoints);
+    _balance_step.resize(num_waypoints);
+    _oa_step.resize(num_waypoints);
+    _zrpy_step.resize(num_waypoints);
+    _xy_step.resize(num_waypoints);
+    _xyzrpy_step.resize(num_waypoints);
+    _pc_step.resize(num_waypoints);
+    _int_step.resize(num_waypoints);
+    _step.resize(num_waypoints);
 
-    _Jr.ReSize(3,_numdofs);
-    _Jr0.ReSize(3,_numdofs);
-    _Jr_proper.ReSize(3,_numdofs);
+    _exclude_control_points.resize(num_waypoints);
+    _links_in_collision.resize(num_waypoints);
 
-    step.ReSize(_numdofs);
-    step = 0.0;
+    _xy_error.resize(num_waypoints);
+    _z_error.resize(num_waypoints);
+    _rpy_error.resize(num_waypoints);
 
-    W.ReSize(_numdofs);
-    Winv.ReSize(_numdofs);
-    W = 1.0;
-    Winv = 1.0;
+    for(int w = 0; w < num_waypoints; w++)
+    {
+        auto manip_group_map = _waypoint_manip_group_map[w];
+        int manip_num_in_group = manip_group_map.size();
+
+        // XY
+        _JXY[w].ReSize(2*manip_num_in_group,_numdofs);
+        _JXYplus[w].ReSize(_numdofs,2*manip_num_in_group);
+        _Mxy[w].ReSize(2*manip_num_in_group);
+        _Mxyinv[w].ReSize(2*manip_num_in_group);
+        _dxy[w].ReSize(2*manip_num_in_group);
+        _Regxy[w].ReSize(2*manip_num_in_group);
+        _Regxy[w] = 0.0001;
+
+        // Z
+        _JZ[w].ReSize(1,_numdofs);
+        _JRPY[w].ReSize(3,_numdofs);
+        
+        _JZRPY[w].ReSize(4*manip_num_in_group,_numdofs);
+        _JZRPYplus[w].ReSize(_numdofs,4*manip_num_in_group);
+        _Mzrpy[w].ReSize(4*manip_num_in_group);
+        _Mzrpyinv[w].ReSize(4*manip_num_in_group);
+        _dzrpy[w].ReSize(4*manip_num_in_group);
+        _Regzrpy[w].ReSize(4*manip_num_in_group);
+        _Regzrpy[w] = 0.0001;
+        
+        _JXYZRPY[w].ReSize(6*manip_num_in_group,_numdofs);
+        _JXYZRPYplus[w].ReSize(_numdofs,6*manip_num_in_group);
+        _Mxyzrpy[w].ReSize(6*manip_num_in_group);
+        _Mxyzrpyinv[w].ReSize(6*manip_num_in_group);
+        _dxyzrpy[w].ReSize(6*manip_num_in_group);
+        _Regxyzrpy[w].ReSize(6*manip_num_in_group);
+        _Regxyzrpy[w] = 0.0001;
+
+        _balance_step[w].ReSize(_numdofs);
+        _balance_step[w] = 0;
+        _oa_step[w].ReSize(_numdofs);
+        _oa_step[w] = 0;
+        _zrpy_step[w].ReSize(_numdofs);
+        _zrpy_step[w] = 0;
+        _xy_step[w].ReSize(_numdofs);
+        _xy_step[w] = 0;
+        _pc_step[w].ReSize(_numdofs);
+        _pc_step[w] = 0;
+        // _m_step[w].ReSize(_numdofs);
+        // _m_step[w] = 0;
+
+        _tooltm[w].ReSize(3,3);
+        _tasktm[w].ReSize(3,3);
+        _E_rpy[w].ReSize(3,3);
+
+        _Jp[w].ReSize(3,_numdofs);
+        _Jp0[w].ReSize(3,_numdofs);
+
+        _Jr[w].ReSize(3,_numdofs);
+        _Jr0[w].ReSize(3,_numdofs);
+        _Jr_proper[w].ReSize(3,_numdofs);
+
+        _step[w].ReSize(_numdofs);
+        _step[w] = 0.0;
+
+        _W[w].ReSize(_numdofs);
+        _Winv[w].ReSize(_numdofs);
+        _W[w] = 1.0;
+        _Winv[w] = 1.0;
+
+        for(map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++)
+        {
+            string manip_name = mgm_it->first;
+            int manip_group_index = mgm_it->second;
+
+            if(strcmp(manip_name.c_str(),"l_arm") == 0)
+            {
+                _exclude_control_points[w].insert("l_palm");
+                _exclude_control_points[w].insert("l_forearm");
+            }
+            else if(strcmp(manip_name.c_str(),"r_arm") == 0)
+            {
+                _exclude_control_points[w].insert("r_palm");
+                _exclude_control_points[w].insert("r_forearm");
+            }
+            else if(strcmp(manip_name.c_str(),"l_leg") == 0)
+            {
+                _exclude_control_points[w].insert("l_foot");
+                _exclude_control_points[w].insert("l_shin");
+            }
+            else if(strcmp(manip_name.c_str(),"r_leg") == 0)
+            {
+                _exclude_control_points[w].insert("r_foot");
+                _exclude_control_points[w].insert("r_shin");
+            }
+        }
+    }
+
 }
 
-void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point)
+void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<string,Vector>::iterator& control_point, size_t w)
 {
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
     dReal repulse_constant = -1;
-    Transform link_transform = _esRobot->GetLink(control_point->first)->GetTransform();
+    Transform link_transform = robot->GetLink(control_point->first)->GetTransform();
     Vector control_point_global_position = link_transform*control_point->second;
     repulsive_vector = Vector(0,0,0);
 
@@ -1226,11 +1446,11 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
         KinBodyPtr ObstacleKinBody = obs_it->first;
         Vector obs_repulsive_vector = obs_it->second;
         
-        if(GetEnv()->CheckCollision(_esRobot->GetLink(control_point->first),ObstacleKinBody->GetLinks()[0]))
+        if(GetEnv()->CheckCollision(robot->GetLink(control_point->first),ObstacleKinBody->GetLinks()[0]))
         {
             // std::vector<KinBody::Link::GeometryPtr> ObstacleGeometry = (*link_it)->GetGeometries();
 
-            link_in_collision.insert(control_point->first);
+            _links_in_collision[w].insert(control_point->first);
 
             repulsive_vector = repulsive_vector + obs_repulsive_vector;
         }
@@ -1243,11 +1463,11 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
     //     string link_2 = (*sc_it).second;
     //     if(control_point->first == link_1 || control_point->first == link_2)
     //     {
-    //         if(GetEnv()->CheckCollision(_esRobot->GetLink(link_1),_esRobot->GetLink(link_2)))
+    //         if(GetEnv()->CheckCollision(robot->GetLink(link_1),robot->GetLink(link_2)))
     //         {
     //             RaveVector<dReal> repulsive_vector_component(0,0,0);
     //             string other_link = (control_point->first == link_1) ? link_2 : link_1;
-    //             RaveVector<dReal> other_link_centroid = _esRobot->GetLink(other_link)->GetTransform().trans;
+    //             RaveVector<dReal> other_link_centroid = robot->GetLink(other_link)->GetTransform().trans;
     //             repulsive_vector_component = (control_point_global_position - other_link_centroid).normalize3();
     //             repulsive_vector = repulsive_vector + repulsive_vector_component;
     //             shortest_dist = 0;
@@ -1423,192 +1643,24 @@ void ElasticStrips::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<s
 
 void ElasticStrips::RemoveBadJointJacobianCols(NEWMAT::Matrix& J, size_t w)
 {
-    if(!badjointinds.at(w).empty())
+    if(!_badjointinds.at(w).empty())
     {
-        for(int j = 0; j < badjointinds.at(w).size(); j++)
+        for(int j = 0; j < _badjointinds.at(w).size(); j++)
             for(int k = 1; k <= J.Nrows(); k++)
-                J(k,badjointinds.at(w).at(j)+1) = 0;     
+                J(k, _badjointinds.at(w).at(j)+1) = 0;     
     }
 }
-
-
-void ElasticStrips::UpdateZRPYandXYJacobianandStep_old(Transform taskframe_in, size_t w)
-{
-    map<string,pair<dReal,Transform> > desired_manip_pose = _parameters->_desired_manip_pose.find(w)->second;
-
-    // XY
-    JXY.ReSize(2*desired_manip_pose.size(),_numdofs);
-    JXYplus.ReSize(_numdofs,2*desired_manip_pose.size());
-    Mxy.ReSize(2*desired_manip_pose.size());
-    Mxyinv.ReSize(2*desired_manip_pose.size());
-    dxy.ReSize(2*desired_manip_pose.size());
-    Regxy.ReSize(2*desired_manip_pose.size());
-    Regxy = 0.0001;
-
-    // Z
-    JZ.ReSize(1,_numdofs);
-    JRPY.ReSize(3,_numdofs);
-    
-    JZRPY.ReSize(4*desired_manip_pose.size(),_numdofs);
-    JZRPYplus.ReSize(_numdofs,4*desired_manip_pose.size());
-    Mzrpy.ReSize(4*desired_manip_pose.size());
-    Mzrpyinv.ReSize(4*desired_manip_pose.size());
-    dzrpy.ReSize(4*desired_manip_pose.size());
-    Regzrpy.ReSize(4*desired_manip_pose.size());
-    Regzrpy = 0.0001;
-
-    cogtarg = Vector(0,0,0);
-
-    int i = 0;
-    vector<string> support_links;
-    for(map<string,pair<dReal,Transform> >::iterator dmp_it = desired_manip_pose.begin(); dmp_it != desired_manip_pose.end(); dmp_it++, i++)
-    {
-        string manip_name = dmp_it->first;
-
-        int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
-        Vector contact_consistent_point = contact_consistent_manip_translation.at(region_index).second;
-
-        Transform contact_consistent_point_frame = dmp_it->second.second;
-        contact_consistent_point_frame.trans.x = contact_consistent_point.x;
-        contact_consistent_point_frame.trans.y = contact_consistent_point.y;
-        contact_consistent_point_frame.trans.z = contact_consistent_point.z;
-
-        // Jacobian
-        RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
-        std::vector<dReal> temp;
-
-        _esRobot->CalculateActiveJacobian(target_manip->GetEndEffector()->GetIndex(), target_manip->GetTransform().trans, temp);
-        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
-
-        _esRobot->CalculateActiveAngularVelocityJacobian(target_manip->GetEndEffector()->GetIndex(), temp);
-        memcpy(_Jr0.Store(),&temp[0],temp.size()*sizeof(dReal));
-
-        _TMtask = contact_consistent_point_frame.inverse() * taskframe_in.inverse();
-        _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-        _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-        _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
-
-        _Jp = _tasktm * _Jp0;
-        _Jr = _tasktm * (-_Jr0);
-
-        JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
-        JZ.Row(1) = _Jp.Row(3);
-
-        //convert current rotation to euler angles (RPY) 
-        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*target_manip->GetTransform(),_psi,_theta,_phi);
-        //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
-
-        Cphi = cos(_phi);
-        Ctheta = cos(_theta);
-        Cpsi = cos(_psi);
-
-        Sphi = sin(_phi);
-        Stheta = sin(_theta);
-        Spsi = sin(_psi);
-
-        _E_rpy(1,1) = Cphi/Ctheta;         _E_rpy(1,2) = Sphi/Ctheta;         _E_rpy(1,3) = 0;
-        _E_rpy(2,1) = -Sphi;               _E_rpy(2,2) = Cphi;                _E_rpy(2,3) = 0;
-        _E_rpy(3,1) = Cphi*Stheta/Ctheta;  _E_rpy(3,2) = Sphi*Stheta/Ctheta;  _E_rpy(3,3) = 1;
-
-        _Jr_proper = _E_rpy * _Jr;
-
-        JRPY = -_Jr_proper;
-
-        JZRPY.Row(i*4+1) = JZ.Row(1);
-        JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
-
-        // Step
-        NEWMAT::ColumnVector dxyzrpy;
-        dxyzrpy.ReSize(6);
-
-        TransformDifference(dxyzrpy.Store(), contact_consistent_point_frame, target_manip->GetTransform());
-
-
-        //velocity, can be written as force
-        dxy(i*2+1) = dxyzrpy(1);
-        dxy(i*2+2) = dxyzrpy(2);
-        dzrpy(i*4+1) = dxyzrpy(3);
-        dzrpy(i*4+2) = dxyzrpy(4);
-        dzrpy(i*4+3) = dxyzrpy(5);
-        dzrpy(i*4+4) = dxyzrpy(6);
-
-        xy_error = xy_error + (dxyzrpy(1) * dxyzrpy(1)) + (dxyzrpy(2) * dxyzrpy(2));
-        z_error = z_error + (dxyzrpy(3) * dxyzrpy(3));
-        rpy_error = rpy_error + (dxyzrpy(4) * dxyzrpy(4)) + (dxyzrpy(5) * dxyzrpy(5)) + (dxyzrpy(6) * dxyzrpy(6));;
-
-        //dirty code to decide cogtarg:(specialize to escher robot)
-        if(manip_name == "l_leg")
-        {
-            cogtarg.x += contact_consistent_point.x;
-            cogtarg.y += contact_consistent_point.y;
-            support_links.push_back("l_foot");
-        }
-        else if(manip_name == "r_leg")
-        {
-            cogtarg.x += contact_consistent_point.x;
-            cogtarg.y += contact_consistent_point.y;
-            support_links.push_back("r_foot");
-        }
-        //************//
-        // getchar();
-    }
-
-    RemoveBadJointJacobianCols(JXY,w);
-    Mxy << JXY*JXY.t() + Regxy;
-    invConditioningBound(10000,Mxy,Mxyinv);
-    JXYplus = JXY.t()*Mxyinv;
-
-    RemoveBadJointJacobianCols(JZRPY,w);
-    Mzrpy << JZRPY*JZRPY.t() + Regzrpy;
-    invConditioningBound(10000,Mzrpy,Mzrpyinv);
-    JZRPYplus = JZRPY.t()*Mzrpyinv;
-
-    cogtarg.x /= support_links.size();
-    cogtarg.y /= support_links.size();
-    if(support_links.size() == 0)
-    {
-        cout<<"bug!!!!"<<endl;
-        getchar();
-    }
-    // if(support_links.size() == 1) // standing with one foot
-    // {
-    //     Vector l_foot_transform = _esRobot->GetLink("l_foot")->GetTransform().trans;
-    //     Vector r_foot_transform = _esRobot->GetLink("r_foot")->GetTransform().trans;
-    //     cogtarg.x = (l_foot_transform.x + r_foot_transform.x)/2.0;
-    // }
-
-
-    if(_parameters->balance_mode == BALANCE_SUPPORT_POLYGON)
-    {
-        vector<dReal> qs;
-        _esRobot->GetActiveDOFValues(qs);
-        balance_checker.RefreshBalanceParameters(qs,support_links);
-    }
-    else if(_parameters->balance_mode == BALANCE_GIWC)
-    {
-        // TODO: add a refreshblanaceparameter function for GIWC
-    }
-
-
-    xy_error = sqrt(xy_error);
-    z_error = sqrt(z_error);
-    rpy_error = sqrt(rpy_error);
-
-    dxy = cxy * dxy;
-    dzrpy = czrpy * dzrpy;
-}
-
 
 void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_t w)
 {
-    map<string,int> manip_group_map = waypoint_manip_group_map.find(w)->second;
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
+    map<string,int> manip_group_map = _waypoint_manip_group_map.find(w)->second;
     map<string,int> prev_manip_group_map = manip_group_map;
     string new_contact_manip = "";
-    exclude_control_points.clear();
 
     if(w != 0)
     {
-        prev_manip_group_map = waypoint_manip_group_map.find(w-1)->second;
+        prev_manip_group_map = _waypoint_manip_group_map.find(w-1)->second;
     }
 
     for(map<string,int>::iterator it = manip_group_map.begin(); it != manip_group_map.end(); it++)
@@ -1621,38 +1673,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         }
     }
 
-
-
-    // XY
-    JXY.ReSize(2*manip_group_map.size(),_numdofs);
-    JXYplus.ReSize(_numdofs,2*manip_group_map.size());
-    Mxy.ReSize(2*manip_group_map.size());
-    Mxyinv.ReSize(2*manip_group_map.size());
-    dxy.ReSize(2*manip_group_map.size());
-    Regxy.ReSize(2*manip_group_map.size());
-    Regxy = 0.0001;
-
-    // Z
-    JZ.ReSize(1,_numdofs);
-    JRPY.ReSize(3,_numdofs);
-    
-    JZRPY.ReSize(4*manip_group_map.size(),_numdofs);
-    JZRPYplus.ReSize(_numdofs,4*manip_group_map.size());
-    Mzrpy.ReSize(4*manip_group_map.size());
-    Mzrpyinv.ReSize(4*manip_group_map.size());
-    dzrpy.ReSize(4*manip_group_map.size());
-    Regzrpy.ReSize(4*manip_group_map.size());
-    Regzrpy = 0.0001;
-    
-    JXYZRPY.ReSize(6*manip_group_map.size(),_numdofs);
-    JXYZRPYplus.ReSize(_numdofs,6*manip_group_map.size());
-    Mxyzrpy.ReSize(6*manip_group_map.size());
-    Mxyzrpyinv.ReSize(6*manip_group_map.size());
-    dxyzrpy.ReSize(6*manip_group_map.size());
-    Regxyzrpy.ReSize(6*manip_group_map.size());
-    Regxyzrpy = 0.0001;
-
-    cogtarg = Vector(0,0,0);
+    _cogtargs[w].x = 0; _cogtargs[w].y = 0; _cogtargs[w].z = 0;
 
     Transform manip_offset_transform;
 
@@ -1663,6 +1684,9 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
     std::vector<GraphHandlePtr> handles;
 
+    dReal psi, theta, phi;
+    dReal Cphi,Ctheta,Cpsi,Sphi,Stheta,Spsi;
+
     for(map<string,int>::iterator mgm_it = manip_group_map.begin(); mgm_it != manip_group_map.end(); mgm_it++, i++)
     {
         string manip_name = mgm_it->first;
@@ -1670,27 +1694,19 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
         if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
-            manip_offset_transform = l_arm_manip_transform_offset;
-            exclude_control_points.insert("l_palm");
-            exclude_control_points.insert("l_forearm");
+            manip_offset_transform = _l_arm_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"r_arm") == 0)
         {
-            manip_offset_transform = r_arm_manip_transform_offset;
-            exclude_control_points.insert("r_palm");
-            exclude_control_points.insert("r_forearm");
+            manip_offset_transform = _r_arm_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
-            manip_offset_transform = l_leg_manip_transform_offset;
-            exclude_control_points.insert("l_foot");
-            exclude_control_points.insert("l_shin");
+            manip_offset_transform = _l_leg_manip_transform_offset;
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
-            manip_offset_transform = r_leg_manip_transform_offset;
-            exclude_control_points.insert("r_foot");
-            exclude_control_points.insert("r_shin");
+            manip_offset_transform = _r_leg_manip_transform_offset;
         }
 
         // int region_index = contact_consistent_region.find(w)->second.find(manip_name)->second;
@@ -1702,59 +1718,59 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         // contact_consistent_point_frame.trans.y = contact_consistent_point.y;
         // contact_consistent_point_frame.trans.z = contact_consistent_point.z;
 
-        Transform contact_consistent_point_frame = contact_manips_group.find(manip_group_index)->second.contact_consistent_transform; // contact_consistent_point_frame with rotated end-effector transform
+        Transform contact_consistent_point_frame = _contact_manips_group.find(manip_group_index)->second.contact_consistent_transform; // contact_consistent_point_frame with rotated end-effector transform
 
         // Jacobian
-        RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
+        RobotBase::ManipulatorPtr target_manip = robot->GetManipulators()[_GetManipIndex.find(manip_name)->second];
         std::vector<dReal> temp;
 
-        _esRobot->CalculateActiveJacobian(target_manip->GetEndEffector()->GetIndex(), target_manip->GetTransform().trans, temp);
-        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveJacobian(target_manip->GetEndEffector()->GetIndex(), target_manip->GetTransform().trans, temp);
+        memcpy(_Jp0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-        _TMtool = manip_offset_transform;
-        _tooltm(1,1) = _TMtool.m[0];        _tooltm(1,2) = _TMtool.m[1];        _tooltm(1,3) = _TMtool.m[2];
-        _tooltm(2,1) = _TMtool.m[4];        _tooltm(2,2) = _TMtool.m[5];        _tooltm(2,3) = _TMtool.m[6];
-        _tooltm(3,1) = _TMtool.m[8];        _tooltm(3,2) = _TMtool.m[9];        _tooltm(3,3) = _TMtool.m[10];
+        _TMtool[w] = manip_offset_transform;
+        _tooltm[w](1,1) = _TMtool[w].m[0];        _tooltm[w](1,2) = _TMtool[w].m[1];        _tooltm[w](1,3) = _TMtool[w].m[2];
+        _tooltm[w](2,1) = _TMtool[w].m[4];        _tooltm[w](2,2) = _TMtool[w].m[5];        _tooltm[w](2,3) = _TMtool[w].m[6];
+        _tooltm[w](3,1) = _TMtool[w].m[8];        _tooltm[w](3,2) = _TMtool[w].m[9];        _tooltm[w](3,3) = _TMtool[w].m[10];
 
-        _esRobot->CalculateActiveAngularVelocityJacobian(target_manip->GetEndEffector()->GetIndex(), temp);
-        memcpy(_Jr0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveAngularVelocityJacobian(target_manip->GetEndEffector()->GetIndex(), temp);
+        memcpy(_Jr0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-        _TMtask = contact_consistent_point_frame.inverse() * taskframe_in.inverse();
-        _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-        _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-        _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+        _TMtask[w] = contact_consistent_point_frame.inverse() * taskframe_in.inverse();
+        _tasktm[w](1,1) = _TMtask[w].m[0];        _tasktm[w](1,2) = _TMtask[w].m[1];        _tasktm[w](1,3) = _TMtask[w].m[2];
+        _tasktm[w](2,1) = _TMtask[w].m[4];        _tasktm[w](2,2) = _TMtask[w].m[5];        _tasktm[w](2,3) = _TMtask[w].m[6];
+        _tasktm[w](3,1) = _TMtask[w].m[8];        _tasktm[w](3,2) = _TMtask[w].m[9];        _tasktm[w](3,3) = _TMtask[w].m[10];
 
-        _Jp = _tasktm * _Jp0;
-        _Jr = _tasktm * (-_Jr0);
+        _Jp[w] = _tasktm[w] * _Jp0[w];
+        _Jr[w] = _tasktm[w] * (-_Jr0[w]);
 
         // JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
         // JZ.Row(1) = _Jp.Row(3);
 
         //convert current rotation to euler angles (RPY) 
-        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),_psi,_theta,_phi);
+        QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),psi,theta,phi);
         //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
-        Cphi = cos(_phi);
-        Ctheta = cos(_theta);
-        Cpsi = cos(_psi);
+        Cphi = cos(phi);
+        Ctheta = cos(theta);
+        Cpsi = cos(psi);
 
-        Sphi = sin(_phi);
-        Stheta = sin(_theta);
-        Spsi = sin(_psi);
+        Sphi = sin(phi);
+        Stheta = sin(theta);
+        Spsi = sin(psi);
 
-        _E_rpy(1,1) = Cphi/Ctheta;         _E_rpy(1,2) = Sphi/Ctheta;         _E_rpy(1,3) = 0;
-        _E_rpy(2,1) = -Sphi;               _E_rpy(2,2) = Cphi;                _E_rpy(2,3) = 0;
-        _E_rpy(3,1) = Cphi*Stheta/Ctheta;  _E_rpy(3,2) = Sphi*Stheta/Ctheta;  _E_rpy(3,3) = 1;
+        _E_rpy[w](1,1) = Cphi/Ctheta;         _E_rpy[w](1,2) = Sphi/Ctheta;         _E_rpy[w](1,3) = 0;
+        _E_rpy[w](2,1) = -Sphi;               _E_rpy[w](2,2) = Cphi;                _E_rpy[w](2,3) = 0;
+        _E_rpy[w](3,1) = Cphi*Stheta/Ctheta;  _E_rpy[w](3,2) = Sphi*Stheta/Ctheta;  _E_rpy[w](3,3) = 1;
 
-        _Jr_proper = _E_rpy * _Jr;
+        _Jr_proper[w] = _E_rpy[w] * _Jr[w];
 
-        JRPY = -_Jr_proper;
+        _JRPY[w] = -_Jr_proper[w];
 
         // JZRPY.Row(i*4+1) = JZ.Row(1);
         // JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
 
-        JXYZRPY.Rows(i*6+1,i*6+3) = _Jp.Rows(1,3);
-        JXYZRPY.Rows(i*6+4,i*6+6) = JRPY.Rows(1,3);
+        _JXYZRPY[w].Rows(i*6+1,i*6+3) = _Jp[w].Rows(1,3);
+        _JXYZRPY[w].Rows(i*6+4,i*6+6) = _JRPY[w].Rows(1,3);
 
         // Step
         NEWMAT::ColumnVector ds;
@@ -1770,32 +1786,39 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         // dzrpy(i*4+3) = ds(5);
         // dzrpy(i*4+4) = ds(6);
 
-        dxyzrpy(i*6+1) = ds(1);
-        dxyzrpy(i*6+2) = ds(2);
-        dxyzrpy(i*6+3) = ds(3);
-        dxyzrpy(i*6+4) = ds(4);
-        dxyzrpy(i*6+5) = ds(5);
-        dxyzrpy(i*6+6) = ds(6);
+        _dxyzrpy[w](i*6+1) = ds(1);
+        _dxyzrpy[w](i*6+2) = ds(2);
+        _dxyzrpy[w](i*6+3) = ds(3);
+        _dxyzrpy[w](i*6+4) = ds(4);
+        _dxyzrpy[w](i*6+5) = ds(5);
+        _dxyzrpy[w](i*6+6) = ds(6);
 
-        xy_error = xy_error + (ds(1) * ds(1)) + (ds(2) * ds(2));
-        z_error = z_error + (ds(3) * ds(3));
-        rpy_error = rpy_error + (ds(4) * ds(4)) + (ds(5) * ds(5)) + (ds(6) * ds(6));;
+        _xy_error[w] = _xy_error[w] + (ds(1) * ds(1)) + (ds(2) * ds(2));
+        _z_error[w] = _z_error[w] + (ds(3) * ds(3));
+        _rpy_error[w] = _rpy_error[w] + (ds(4) * ds(4)) + (ds(5) * ds(5)) + (ds(6) * ds(6));;
 
         //dirty code to decide cogtarg:(specialize to escher robot)
+        // cout << "manip_name: "<<manip_name<<", new_contact_manip: "<<new_contact_manip<<endl;
+        // for(vector<string>::iterator sl_it = support_links.begin(); sl_it != support_links.end(); sl_it++)
+        // {
+        //     cout << (*sl_it) << ", ";
+        // }
+        // cout << endl;
+
         if(strcmp(manip_name.c_str(),new_contact_manip.c_str()) != 0)
         {
             if(strcmp(manip_name.c_str(),"l_leg") == 0)
             {
-                cogtarg.x += contact_consistent_point_frame.trans.x;
-                cogtarg.y += contact_consistent_point_frame.trans.y;
-                cogtarg.z += contact_consistent_point_frame.trans.z;
+                _cogtargs[w].x += contact_consistent_point_frame.trans.x;
+                _cogtargs[w].y += contact_consistent_point_frame.trans.y;
+                _cogtargs[w].z += contact_consistent_point_frame.trans.z;
                 support_links.push_back("l_foot");
             }
             else if(strcmp(manip_name.c_str(),"r_leg") == 0)
             {
-                cogtarg.x += contact_consistent_point_frame.trans.x;
-                cogtarg.y += contact_consistent_point_frame.trans.y;
-                cogtarg.z += contact_consistent_point_frame.trans.z;
+                _cogtargs[w].x += contact_consistent_point_frame.trans.x;
+                _cogtargs[w].y += contact_consistent_point_frame.trans.y;
+                _cogtargs[w].z += contact_consistent_point_frame.trans.z;
                 support_links.push_back("r_foot");
             }
 
@@ -1803,7 +1826,7 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
             {
                 support_manips.push_back(manip_name);
             }
-        }            
+        }
 
         //************//
         // Transform contact_consistent_transform = contact_consistent_point_frame;
@@ -1847,24 +1870,24 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     // invConditioningBound(10000,Mzrpy,Mzrpyinv);
     // JZRPYplus = JZRPY.t()*Mzrpyinv;
 
-    RemoveBadJointJacobianCols(JXYZRPY,w);
-    Mxyzrpy << JXYZRPY*JXYZRPY.t() + Regxyzrpy;
-    invConditioningBound(10000,Mxyzrpy,Mxyzrpyinv);
-    JXYZRPYplus = JXYZRPY.t()*Mxyzrpyinv;
+    RemoveBadJointJacobianCols(_JXYZRPY[w],w);
+    _Mxyzrpy[w] << _JXYZRPY[w]*_JXYZRPY[w].t() + _Regxyzrpy[w];
+    invConditioningBound(10000,_Mxyzrpy[w],_Mxyzrpyinv[w]);
+    _JXYZRPYplus[w] = _JXYZRPY[w].t()*_Mxyzrpyinv[w];
 
-    cogtarg.x /= support_links.size();
-    cogtarg.y /= support_links.size();
-    cogtarg.z /= support_links.size();
-    cogtarg.z = cogtarg.z + 0.7;
+    _cogtargs[w].x /= support_links.size();
+    _cogtargs[w].y /= support_links.size();
+    _cogtargs[w].z /= support_links.size();
+    _cogtargs[w].z = _cogtargs[w].z + 0.7;
     if(support_links.size() == 0)
     {
-        cout<<"bug!!!!"<<endl;
+        cout<<"support_links.size == 0, bug!!!!"<<endl;
         getchar();
     }
     // if(support_links.size() == 1) // standing with one foot
     // {
-    //     Vector l_foot_transform = _esRobot->GetLink("l_foot")->GetTransform().trans;
-    //     Vector r_foot_transform = _esRobot->GetLink("r_foot")->GetTransform().trans;
+    //     Vector l_foot_transform = robot->GetLink("l_foot")->GetTransform().trans;
+    //     Vector r_foot_transform = robot->GetLink("r_foot")->GetTransform().trans;
     //     cogtarg.x = (l_foot_transform.x + r_foot_transform.x)/2.0;
     // }
 
@@ -1885,62 +1908,21 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
     //     getchar();
     // }
 
-
+    vector<dReal> qs;
+    robot->GetActiveDOFValues(qs);
     if(_parameters->balance_mode == BALANCE_SUPPORT_POLYGON)
-    {
-        vector<dReal> qs;
-        _esRobot->GetActiveDOFValues(qs);
-        balance_checker.RefreshBalanceParameters(qs,support_links);
+    {        
+        _balance_checkers[w]->RefreshBalanceParameters(qs,support_links,_giwc_database);
     }
     else if(_parameters->balance_mode == BALANCE_GIWC)
     {
-        // TODO: add a refreshblanaceparameter function for GIWC
-        vector<dReal> qs;
-        _esRobot->GetActiveDOFValues(qs);
-        balance_checker.RefreshBalanceParameters(qs,support_manips);
-
-        // Vector torso_transform = _esRobot->GetLink("torso")->GetTransform().trans;
-
-        // float sampling_range_xy = 0.5;
-        // float sampling_range_z = 0.1;
-
-        // cogtarg = Vector(0,0,0);
-        // float feasible_cog_count = 0;
-
-        // for(float xi = torso_transform.x - sampling_range_xy; xi <= torso_transform.x + sampling_range_xy; xi = xi + 0.05)
-        // {
-        //     for(float yi = torso_transform.y - sampling_range_xy; yi <= torso_transform.y + sampling_range_xy; yi = yi + 0.05)
-        //     {
-        //         for(float zi = torso_transform.z - sampling_range_z; zi <= torso_transform.z + sampling_range_z; zi = zi + 0.01)
-        //         {
-        //             if(balance_checker.CheckSupport(Vector(xi,yi,zi)))
-        //             {
-        //                 cogtarg.x += xi;
-        //                 cogtarg.y += yi;
-        //                 cogtarg.z += zi;
-        //                 feasible_cog_count += 1;
-        //             }
-        //         }
-        //     }
-        // }
-
-        // if(feasible_cog_count != 0)
-        // {
-        //     cogtarg.x /= feasible_cog_count;
-        //     cogtarg.y /= feasible_cog_count;
-        //     cogtarg.z /= feasible_cog_count;
-        // }
-        // else
-        // {
-        //     cout<<"No Way!!!!"<<endl;
-        //     getchar();
-        // }
-
+        _balance_checkers[w]->RefreshBalanceParameters(qs,support_manips,_giwc_database);
     }
 
-    xy_error = sqrt(xy_error);
-    z_error = sqrt(z_error);
-    rpy_error = sqrt(rpy_error);
+
+    _xy_error[w] = sqrt(_xy_error[w]);
+    _z_error[w] = sqrt(_z_error[w]);
+    _rpy_error[w] = sqrt(_rpy_error[w]);
 
     // dxy = cxy * dxy;
     // dzrpy = czrpy * dzrpy;
@@ -1950,67 +1932,70 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
 void ElasticStrips::UpdateCOGJacobianandStep(Transform taskframe_in,size_t w)
 {
-    JCOG = 0.0;
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
 
-    curcog = Vector(0,0,0,0);
+    _JCOG[w] = 0.0;
+
+    _curcogs[w].x = 0; _curcogs[w].y = 0; _curcogs[w].z = 0;
     dReal fTotalMass = 0;
     std::vector<KinBody::LinkPtr>::const_iterator itlink;
 
-    _TMtask = TransformMatrix(taskframe_in.inverse());
-    _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-    _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-    _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+    TransformMatrix TMtask = TransformMatrix(taskframe_in.inverse());
+    _tasktm[w](1,1) = TMtask.m[0];        _tasktm[w](1,2) = TMtask.m[1];        _tasktm[w](1,3) = TMtask.m[2];
+    _tasktm[w](2,1) = TMtask.m[4];        _tasktm[w](2,2) = TMtask.m[5];        _tasktm[w](2,3) = TMtask.m[6];
+    _tasktm[w](3,1) = TMtask.m[8];        _tasktm[w](3,2) = TMtask.m[9];        _tasktm[w](3,3) = TMtask.m[10];
 
 
     std::vector<dReal> temp;
-    FORIT(itlink, _esRobot->GetLinks())
+    FORIT(itlink, robot->GetLinks())
     {
-        _esRobot->CalculateActiveJacobian((*itlink)->GetIndex(), ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset()), temp);
-        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveJacobian((*itlink)->GetIndex(), ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset()), temp);
+        memcpy(_Jp0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-        _Jp = _tasktm * _Jp0;
+        _Jp[w] = _tasktm[w] * _Jp0[w];
 
-        JCOG = JCOG + ((*itlink)->GetMass()*(_Jp.Rows(1,2)));
+        _JCOG[w] = _JCOG[w] + ((*itlink)->GetMass()*(_Jp[w].Rows(1,2)));
         // JCOG = JCOG + ((*itlink)->GetMass()*(_Jp.Rows(1,3)));
 
-        curcog += ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset() * (*itlink)->GetMass());
+        _curcogs[w] += ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset() * (*itlink)->GetMass());
         fTotalMass += (*itlink)->GetMass();
     }
 
     if( fTotalMass > 0 )
-        curcog /= fTotalMass;
+        _curcogs[w] /= fTotalMass;
    
-    JCOG = JCOG/fTotalMass;
-    RemoveBadJointJacobianCols(JCOG,w);
-    Mcog << JCOG*JCOG.t() + Regcog;
-    invConditioningBound(10000,Mcog,Mcoginv);
-    JCOGplus = JCOG.t()*Mcoginv;
+    _JCOG[w] = _JCOG[w]/fTotalMass;
+    RemoveBadJointJacobianCols(_JCOG[w],w);
+    _Mcog[w] << _JCOG[w]*_JCOG[w].t() + _Regcog[w];
+    invConditioningBound(10000,_Mcog[w],_Mcoginv[w]);
+    _JCOGplus[w] = _JCOG[w].t()*_Mcoginv[w];
 
-    if(!balance_checker.CheckSupport(curcog))
+    if(!_balance_checkers[w]->CheckSupport(_curcogs[w]))
     {
         // if(_parameters->balance_mode == BALANCE_SUPPORT_POLYGON)
         //     cogtarg.z = curcog.z;
 
-        dcog(1) = (curcog.x - cogtarg.x);
-        dcog(2) = (curcog.y - cogtarg.y);
-        // dcog(3) = (curcog.z - cogtarg.z);
+        _dcog[w](1) = (_curcogs[w].x - _cogtargs[w].x);
+        _dcog[w](2) = (_curcogs[w].y - _cogtargs[w].y);
+        // _dcog[w](3) = (_curcogs[w].y - _cogtargs[w].y);
     }
     else
     {
-        dcog(1) = 0;
-        dcog(2) = 0;
-        // dcog(3) = 0;
+        _dcog[w](1) = 0;
+        _dcog[w](2) = 0;
+        // _dcog[w](3) = 0;
     }
 
-    dcog = ccog * dcog;
+    _dcog[w] = _ccog * _dcog[w];
 
 }
 
-void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w)
+void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w, bool& bInCollision)
 {
     //calculate the velocity of each control point
     //calculate jacobian for each control point to generate the joint angular velocity
     //sum the joint angular velocity
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
 
     std::map<string,Vector> control_points_in_movement;
     std::map<string,Vector> control_point_movement_vector;
@@ -2018,19 +2003,19 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
 
     bInCollision = false;
 
-    link_in_collision.clear();
+    _links_in_collision[w].clear();
 
     for(std::map<string,Vector>::iterator ctrl_it = _parameters->_control_points.begin(); ctrl_it != _parameters->_control_points.end(); ctrl_it++)
     {
         // cout<<ctrl_it->first<<endl;
-        if(exclude_control_points.count(ctrl_it->first) == 1)
+        if(_exclude_control_points[w].count(ctrl_it->first) == 1)
         {
             // cout<<"exclude: "<<ctrl_it->first<<endl;
             continue;
         }
 
         Vector repulsive_vector(0,0,0);
-        GetRepulsiveVector(repulsive_vector, ctrl_it);
+        GetRepulsiveVector(repulsive_vector, ctrl_it, w);
 
         if(repulsive_vector.lengthsqr3() != 0)
         {
@@ -2039,24 +2024,24 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
 
         if(repulsive_vector.lengthsqr3() != 0)
         {
-            _Jp.ReSize(3,_numdofs);
+            _Jp[w].ReSize(3,_numdofs);
 
-            _TMtask = TransformMatrix(taskframe_in.inverse());
-            _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-            _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-            _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+            _TMtask[w] = TransformMatrix(taskframe_in.inverse());
+            _tasktm[w](1,1) = _TMtask[w].m[0];        _tasktm[w](1,2) = _TMtask[w].m[1];        _tasktm[w](1,3) = _TMtask[w].m[2];
+            _tasktm[w](2,1) = _TMtask[w].m[4];        _tasktm[w](2,2) = _TMtask[w].m[5];        _tasktm[w](2,3) = _TMtask[w].m[6];
+            _tasktm[w](3,1) = _TMtask[w].m[8];        _tasktm[w](3,2) = _TMtask[w].m[9];        _tasktm[w](3,3) = _TMtask[w].m[10];
 
-            KinBody::LinkPtr target_link = _esRobot->GetLink(ctrl_it->first);
+            KinBody::LinkPtr target_link = robot->GetLink(ctrl_it->first);
             std::vector<dReal> temp;
 
-            _esRobot->CalculateActiveJacobian(target_link->GetIndex(), (target_link->GetTransform() * ctrl_it->second), temp);
-            memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+            robot->CalculateActiveJacobian(target_link->GetIndex(), (target_link->GetTransform() * ctrl_it->second), temp);
+            memcpy(_Jp0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-            _Jp = _tasktm * _Jp0;
+            _Jp[w] = _tasktm[w] * _Jp0[w];
 
             control_points_in_movement.insert(*ctrl_it);
             control_point_movement_vector.insert(std::pair<string,Vector>(ctrl_it->first,repulsive_vector));
-            control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,_Jp));
+            control_point_jacobian.insert(std::pair<string,NEWMAT::Matrix>(ctrl_it->first,_Jp[w]));
         }
     }
 
@@ -2064,7 +2049,7 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
     {
         NEWMAT::Matrix Jtemp;
         Jtemp.ReSize(0,_numdofs);
-        doa.ReSize(3*control_points_in_movement.size());
+        _doa[w].ReSize(3*control_points_in_movement.size());
 
         int point_index = 0;
 
@@ -2072,35 +2057,35 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
         for(std::map<string,Vector>::iterator ctrl_it = control_points_in_movement.begin(); ctrl_it != control_points_in_movement.end(); ctrl_it++)
         {
             Jtemp &= control_point_jacobian.find(ctrl_it->first)->second;
-            doa(point_index*3+1) = control_point_movement_vector.find(ctrl_it->first)->second.x;
-            doa(point_index*3+2) = control_point_movement_vector.find(ctrl_it->first)->second.y;
-            doa(point_index*3+3) = control_point_movement_vector.find(ctrl_it->first)->second.z;
+            _doa[w](point_index*3+1) = control_point_movement_vector.find(ctrl_it->first)->second.x;
+            _doa[w](point_index*3+2) = control_point_movement_vector.find(ctrl_it->first)->second.y;
+            _doa[w](point_index*3+3) = control_point_movement_vector.find(ctrl_it->first)->second.z;
             point_index++;
         }
 
-        JOA = Jtemp;
+        _JOA[w] = Jtemp;
 
-        RemoveBadJointJacobianCols(JOA,w);
-        Regoa.ReSize(JOA.Nrows());
-        Regoa = 0.0001;
-        Moa.ReSize(JOA.Nrows());
-        Moainv.ReSize(JOA.Nrows());
-        Moa << (JOA*JOA.t()) + Regoa;
-        invConditioningBound(10000,Moa,Moainv);
-        JOAplus.ReSize(_numdofs,3*control_points_in_movement.size());
-        JOAplus = JOA.t()*Moainv;
+        RemoveBadJointJacobianCols(_JOA[w],w);
+        _Regoa[w].ReSize(_JOA[w].Nrows());
+        _Regoa[w] = 0.0001;
+        _Moa[w].ReSize(_JOA[w].Nrows());
+        _Moainv[w].ReSize(_JOA[w].Nrows());
+        _Moa[w] << (_JOA[w]*_JOA[w].t()) + _Regoa[w];
+        invConditioningBound(10000,_Moa[w],_Moainv[w]);
+        _JOAplus[w].ReSize(_numdofs,3*control_points_in_movement.size());
+        _JOAplus[w] = _JOA[w].t()*_Moainv[w];
 
         // doa = coa * doa / control_points_in_movement.size();
-        doa = coa * doa;
+        _doa[w] = _coa * _doa[w];
     }
     else
     {
-        doa.ReSize(1);
-        JOA.ReSize(1,_numdofs);
-        JOAplus.ReSize(_numdofs,1);
-        doa = 0.0;
-        JOA = 0.0;
-        JOAplus = 0.0;
+        _doa[w].ReSize(1);
+        _JOA[w].ReSize(1,_numdofs);
+        _JOAplus[w].ReSize(_numdofs,1);
+        _doa[w] = 0.0;
+        _JOA[w] = 0.0;
+        _JOAplus[w] = 0.0;
     }
 
 }
@@ -2108,116 +2093,124 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
 
 void ElasticStrips::UpdatePCJacobianandStep(Transform taskframe_in,size_t w)
 {
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
+
     NEWMAT::Matrix Jtemp;
     Jtemp.ReSize(0,_numdofs);
     int i = 0;
+
+    dReal psi, theta, phi;
+    dReal Cphi,Ctheta,Cpsi,Sphi,Stheta,Spsi;
+
     for(map<string,Transform>::iterator pc_it = _parameters->_posture_control.begin(); pc_it != _parameters->_posture_control.end(); pc_it++, i++)
     {
-        KinBody::LinkPtr target_link = _esRobot->GetLink(pc_it->first);
+        KinBody::LinkPtr target_link = robot->GetLink(pc_it->first);
 
         // Jacobian
         std::vector<dReal> temp;
 
-        _esRobot->CalculateActiveJacobian(target_link->GetIndex(), target_link->GetTransform().trans, temp);
-        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveJacobian(target_link->GetIndex(), target_link->GetTransform().trans, temp);
+        memcpy(_Jp0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-        _esRobot->CalculateActiveAngularVelocityJacobian(target_link->GetIndex(), temp);
-        memcpy(_Jr0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveAngularVelocityJacobian(target_link->GetIndex(), temp);
+        memcpy(_Jr0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
 
-        _TMtask = TransformMatrix(taskframe_in.inverse());
-        _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-        _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-        _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+        _TMtask[w] = TransformMatrix(taskframe_in.inverse());
+        _tasktm[w](1,1) = _TMtask[w].m[0];        _tasktm[w](1,2) = _TMtask[w].m[1];        _tasktm[w](1,3) = _TMtask[w].m[2];
+        _tasktm[w](2,1) = _TMtask[w].m[4];        _tasktm[w](2,2) = _TMtask[w].m[5];        _tasktm[w](2,3) = _TMtask[w].m[6];
+        _tasktm[w](3,1) = _TMtask[w].m[8];        _tasktm[w](3,2) = _TMtask[w].m[9];        _tasktm[w](3,3) = _TMtask[w].m[10];
 
-        _Jp = _tasktm * _Jp0;
+        _Jp[w] = _tasktm[w] * _Jp0[w];
 
-        _Jr = _tasktm * (-_Jr0);
+        _Jr[w] = _tasktm[w] * (-_Jr0[w]);
 
         //convert current rotation to euler angles (RPY) 
-        QuatToRPY(taskframe_in.inverse()*target_link->GetTransform(),_psi,_theta,_phi);
+        QuatToRPY(taskframe_in.inverse()*target_link->GetTransform(), psi, theta, phi);
         //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
-        Cphi = cos(_phi);
-        Ctheta = cos(_theta);
-        Cpsi = cos(_psi);
+        Cphi = cos(phi);
+        Ctheta = cos(theta);
+        Cpsi = cos(psi);
 
-        Sphi = sin(_phi);
-        Stheta = sin(_theta);
-        Spsi = sin(_psi);
+        Sphi = sin(phi);
+        Stheta = sin(theta);
+        Spsi = sin(psi);
 
-        _E_rpy(1,1) = Cphi/Ctheta;         _E_rpy(1,2) = Sphi/Ctheta;         _E_rpy(1,3) = 0;
-        _E_rpy(2,1) = -Sphi;               _E_rpy(2,2) = Cphi;                _E_rpy(2,3) = 0;
-        _E_rpy(3,1) = Cphi*Stheta/Ctheta;  _E_rpy(3,2) = Sphi*Stheta/Ctheta;  _E_rpy(3,3) = 1;
+        _E_rpy[w](1,1) = Cphi/Ctheta;         _E_rpy[w](1,2) = Sphi/Ctheta;         _E_rpy[w](1,3) = 0;
+        _E_rpy[w](2,1) = -Sphi;               _E_rpy[w](2,2) = Cphi;                _E_rpy[w](2,3) = 0;
+        _E_rpy[w](3,1) = Cphi*Stheta/Ctheta;  _E_rpy[w](3,2) = Sphi*Stheta/Ctheta;  _E_rpy[w](3,3) = 1;
 
-        _Jr_proper = _E_rpy * _Jr;
+        _Jr_proper[w] = _E_rpy[w] * _Jr[w];
 
-        Jtemp &= _Jp;
-        Jtemp &= -_Jr_proper;
+        Jtemp &= _Jp[w];
+        Jtemp &= -_Jr_proper[w];
 
 
         // Step
-        Transform desired_link_transform = taskframe_in.inverse() * pc_it->second * _esRobot->GetLink("torso")->GetTransform();
-        TransformDifference(dpc.Store() + i*6, desired_link_transform, taskframe_in.inverse()*target_link->GetTransform());
+        Transform desired_link_transform = taskframe_in.inverse() * pc_it->second * robot->GetLink("torso")->GetTransform();
+        TransformDifference(_dpc[w].Store() + i*6, desired_link_transform, taskframe_in.inverse()*target_link->GetTransform());
     }
 
-    JPC = Jtemp;
-    RemoveBadJointJacobianCols(JPC,w);
-    Mpc << (JPC*JPC.t()) + Regpc;
-    invConditioningBound(10000,Mpc,Mpcinv);
-    JPCplus = JPC.t()*Mpcinv;
+    _JPC[w] = Jtemp;
+    RemoveBadJointJacobianCols(_JPC[w],w);
+    _Mpc[w] << (_JPC[w]*_JPC[w].t()) + _Regpc[w];
+    invConditioningBound(10000,_Mpc[w],_Mpcinv[w]);
+    _JPCplus[w] = _JPC[w].t()*_Mpcinv[w];
 
-    dpc = cpc * dpc;
+    _dpc[w] = _cpc * _dpc[w];
 
 }
 
 void ElasticStrips::UpdateINTJacobianandStep(Transform taskframe_in, TrajectoryBasePtr ptraj, size_t w)
 {
+    RobotBasePtr robot = _esRobotVec[w%_num_robots];
+
     NEWMAT::Matrix Jtemp;
     Jtemp.ReSize(0,_numdofs);
     int i = 0;
     for(vector<string>::iterator int_it = _parameters->_internal_force_links.begin(); int_it != _parameters->_internal_force_links.end(); int_it++, i++)
     {
-        KinBody::LinkPtr target_link = _esRobot->GetLink(*int_it);
+        KinBody::LinkPtr target_link = robot->GetLink(*int_it);
 
         // Jacobian
         std::vector<dReal> temp;
 
-        _esRobot->CalculateActiveJacobian(target_link->GetIndex(), target_link->GetTransform().trans, temp);
-        memcpy(_Jp0.Store(),&temp[0],temp.size()*sizeof(dReal));
+        robot->CalculateActiveJacobian(target_link->GetIndex(), target_link->GetTransform().trans, temp);
+        memcpy(_Jp0[w].Store(),&temp[0],temp.size()*sizeof(dReal));
 
-        _TMtask = TransformMatrix(taskframe_in.inverse());
-        _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
-        _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
-        _tasktm(3,1) = _TMtask.m[8];        _tasktm(3,2) = _TMtask.m[9];        _tasktm(3,3) = _TMtask.m[10];
+        _TMtask[w] = TransformMatrix(taskframe_in.inverse());
+        _tasktm[w](1,1) = _TMtask[w].m[0];        _tasktm[w](1,2) = _TMtask[w].m[1];        _tasktm[w](1,3) = _TMtask[w].m[2];
+        _tasktm[w](2,1) = _TMtask[w].m[4];        _tasktm[w](2,2) = _TMtask[w].m[5];        _tasktm[w](2,3) = _TMtask[w].m[6];
+        _tasktm[w](3,1) = _TMtask[w].m[8];        _tasktm[w](3,2) = _TMtask[w].m[9];        _tasktm[w](3,3) = _TMtask[w].m[10];
 
-        _Jp = _tasktm * _Jp0;
+        _Jp[w] = _tasktm[w] * _Jp0[w];
 
-        Jtemp &= _Jp;
+        Jtemp &= _Jp[w];
 
         // Step
         Vector internal_vector(0,0,0);
-        GetInternalVector(internal_vector, ptraj, *int_it, w);
-        dint(i*3+1) = internal_vector.x;
-        dint(i*3+2) = internal_vector.y;
-        dint(i*3+3) = internal_vector.z;
+        GetInternalVector(internal_vector, ptraj, robot, *int_it, w);
+        _dint[w](i*3+1) = internal_vector.x;
+        _dint[w](i*3+2) = internal_vector.y;
+        _dint[w](i*3+3) = internal_vector.z;
     }
 
-    JINT = Jtemp;
-    RemoveBadJointJacobianCols(JINT,w);
-    Mint << (JINT*JINT.t()) + Regint;
-    invConditioningBound(10000,Mint,Mintinv);
-    JINTplus = JINT.t()*Mintinv;
+    _JINT[w] = Jtemp;
+    RemoveBadJointJacobianCols(_JINT[w],w);
+    _Mint[w] << (_JINT[w]*_JINT[w].t()) + _Regint[w];
+    invConditioningBound(10000,_Mint[w],_Mintinv[w]);
+    _JINTplus[w] = _JINT[w].t()*_Mintinv[w];
 
-    dint = cint * dint;
+    _dint[w] = _cint * _dint[w];
 
 }
 
-void ElasticStrips::GetInternalVector(Vector& internal_vector, TrajectoryBasePtr ptraj, string control_link, size_t w)
+void ElasticStrips::GetInternalVector(Vector& internal_vector, TrajectoryBasePtr ptraj, RobotBasePtr robot, string control_link, size_t w)
 {
     // Can be modified to include orientation.
 
-    EnvironmentMutex::scoped_lock lockenv(_esEnv->GetMutex());
+    // EnvironmentMutex::scoped_lock lockenv(_esEnv->GetMutex());
 
     Vector prev_trans(0,0,0);
     Vector next_trans(0,0,0);
@@ -2232,17 +2225,17 @@ void ElasticStrips::GetInternalVector(Vector& internal_vector, TrajectoryBasePtr
     if(w != 0 && w != ptraj->GetNumWaypoints()-1)
     {
         ptraj->GetWaypoint(w,qs);
-        _esRobot->SetActiveDOFValues(qs);
-        current_trans = _esRobot->GetLink(control_link)->GetTransform().trans;
+        robot->SetActiveDOFValues(qs);
+        current_trans = robot->GetLink(control_link)->GetTransform().trans;
 
         ptraj->GetWaypoint(w-1,qs_prev);
-        _esRobot->SetActiveDOFValues(qs_prev);
-        prev_trans = _esRobot->GetLink(control_link)->GetTransform().trans;
+        robot->SetActiveDOFValues(qs_prev);
+        prev_trans = robot->GetLink(control_link)->GetTransform().trans;
         dpc_trans = sqrt((current_trans-prev_trans).lengthsqr3());
 
         ptraj->GetWaypoint(w+1,qs_next);
-        _esRobot->SetActiveDOFValues(qs_next);
-        next_trans = _esRobot->GetLink(control_link)->GetTransform().trans;
+        robot->SetActiveDOFValues(qs_next);
+        next_trans = robot->GetLink(control_link)->GetTransform().trans;
         dcn_trans = sqrt((next_trans-current_trans).lengthsqr3());
 
         if(dpc_trans+dcn_trans < 0.0001)
@@ -2255,7 +2248,7 @@ void ElasticStrips::GetInternalVector(Vector& internal_vector, TrajectoryBasePtr
         }
 
         // reset the robot configuration
-        _esRobot->SetActiveDOFValues(qs);
+        robot->SetActiveDOFValues(qs);
     }
     else
     {
@@ -2266,19 +2259,23 @@ void ElasticStrips::GetInternalVector(Vector& internal_vector, TrajectoryBasePtr
 
 dReal ElasticStrips::TransformDifference(dReal * dx,Transform tm_ref, Transform tm_targ)
 {
-    _tmtemp = tm_ref.inverse()*tm_targ;
+    //used in transform difference
+    Transform tmtemp;
+    dReal sumsqr;
+    
+    tmtemp = tm_ref.inverse()*tm_targ;
 
-    dx[0] = _tmtemp.trans.x;
-    dx[1] = _tmtemp.trans.y;
-    dx[2] = _tmtemp.trans.z;
+    dx[0] = tmtemp.trans.x;
+    dx[1] = tmtemp.trans.y;
+    dx[2] = tmtemp.trans.z;
 
-    QuatToRPY(_tmtemp,dx[3],dx[4],dx[5]);
+    QuatToRPY(tmtemp,dx[3],dx[4],dx[5]);
 
-    _sumsqr = 0;
+    sumsqr = 0;
     for(int i = 0; i < 6; i++)
-        _sumsqr += dx[i]*dx[i];
+        sumsqr += dx[i]*dx[i];
 
-    return sqrt(_sumsqr);
+    return sqrt(sumsqr);
 }
 
 OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
@@ -2286,65 +2283,68 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
     EnvironmentMutex::scoped_lock lockenv(_esEnv->GetMutex());
 
     OpenRAVE::PlannerStatus result = PS_HasSolution;
-    dReal maxstep, magnitude, xyz_error, total_error;
 
     if(bPrint)
         RAVELOG_INFO("Initialize posture control and balance variables.\n");
 
     // Initialize invaraint Jacobian dimension of each constriant.
-    if(_parameters->bPOSTURE_CONTROL)
+    for(unsigned int w = 0; w < ptraj->GetNumWaypoints(); w++)
     {
-        JPC.ReSize(6*_parameters->_posture_control.size(),_numdofs);
-        JPCplus.ReSize(_numdofs,6*_parameters->_posture_control.size());
-        Mpc.ReSize(6*_parameters->_posture_control.size());
-        Mpcinv.ReSize(6*_parameters->_posture_control.size());
-        Regpc.ReSize(6*_parameters->_posture_control.size());
-        Regpc = 0.0001;
-        dpc.ReSize(6*_parameters->_posture_control.size());
-    }
+        if(_parameters->bPOSTURE_CONTROL)
+        {
+            _JPC[w].ReSize(6*_parameters->_posture_control.size(),_numdofs);
+            _JPCplus[w].ReSize(_numdofs,6*_parameters->_posture_control.size());
+            _Mpc[w].ReSize(6*_parameters->_posture_control.size());
+            _Mpcinv[w].ReSize(6*_parameters->_posture_control.size());
+            _Regpc[w].ReSize(6*_parameters->_posture_control.size());
+            _Regpc[w] = 0.0001;
+            _dpc[w].ReSize(6*_parameters->_posture_control.size());
+        }
 
-    if(_parameters->balance_mode != BALANCE_NONE)
-    {
-        JCOG.ReSize(2,_numdofs);
-        JCOGplus.ReSize(_numdofs,2);
-        Mcog.ReSize(2);
-        Mcoginv.ReSize(2);
-        Regcog.ReSize(2);
-        Regcog = 0.0001;
-        dcog.ReSize(2);
-        // JCOG.ReSize(3,_numdofs);
-        // JCOGplus.ReSize(_numdofs,3);
-        // Mcog.ReSize(3);
-        // Mcoginv.ReSize(3);
-        // Regcog.ReSize(3);
-        // Regcog = 0.0001;
-        // dcog.ReSize(3);
-    }
+        if(_parameters->balance_mode != BALANCE_NONE)
+        {
+            _JCOG[w].ReSize(2,_numdofs);
+            _JCOGplus[w].ReSize(_numdofs,2);
+            _Mcog[w].ReSize(2);
+            _Mcoginv[w].ReSize(2);
+            _Regcog[w].ReSize(2);
+            _Regcog[w] = 0.0001;
+            _dcog[w].ReSize(2);
+            // _JCOG[w].ReSize(3,_numdofs);
+            // _JCOGplus[w].ReSize(_numdofs,3);
+            // _Mcog[w].ReSize(3);
+            // _Mcoginv[w].ReSize(3);
+            // _Regcog[w].ReSize(3);
+            // _Regcog[w] = 0.0001;
+            // _dcog[w].ReSize(3);
+        }
 
-    JINT.ReSize(3*_parameters->_internal_force_links.size(),_numdofs);
-    JINTplus.ReSize(_numdofs,3*_parameters->_internal_force_links.size());
-    Mint.ReSize(3*_parameters->_internal_force_links.size());
-    Mintinv.ReSize(3*_parameters->_internal_force_links.size());
-    Regint.ReSize(3*_parameters->_internal_force_links.size());
-    Regint = 0.0001;
-    dint.ReSize(3*_parameters->_internal_force_links.size());
+        _JINT[w].ReSize(3*_parameters->_internal_force_links.size(),_numdofs);
+        _JINTplus[w].ReSize(_numdofs,3*_parameters->_internal_force_links.size());
+       
+        _Mint[w].ReSize(3*_parameters->_internal_force_links.size());
+        _Mintinv[w].ReSize(3*_parameters->_internal_force_links.size());
+        
+        _Regint[w].ReSize(3*_parameters->_internal_force_links.size());
+        _Regint[w] = 0.0001;
+
+        _dint[w].ReSize(3*_parameters->_internal_force_links.size());
+
+    }
     
     RAVELOG_INFO("Initialize waypoints status tracker.\n");
 
-    stable_waypoint.clear();
-    for(unsigned int w = 0; w < ptraj->GetNumWaypoints(); w++)
-    {
-        stable_waypoint.insert(std::pair<size_t,bool>(w,false));
-    }
+    _stable_waypoint.resize(ptraj->GetNumWaypoints(),false);
 
     // std::pair<dReal,dReal> prismatic_x_limit;
     // // prismatic_x_limit.first = 
-
 
     TrajectoryBasePtr ftraj = RaveCreateTrajectory(GetEnv(),"");
     ftraj->Init(_esRobot->GetActiveConfigurationSpecification());
 
     ftraj->Clone(ptraj,0);
+
+    int num_waypoints = ftraj->GetNumWaypoints();
 
     bool all_waypoints_stable;
 
@@ -2352,28 +2352,27 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         RAVELOG_INFO("Elastic Strips main loop starts.\n");
 
     std::vector<size_t> once_stable_waypoint;
+    std::vector<size_t> non_stable_waypoint;
 
-    badjointinds.resize(ftraj->GetNumWaypoints());
+    _badjointinds.resize(num_waypoints);
 
-    // maxstep = 0.1 * waypoint_manip_group_map.find(w)->second.size();
-    vector<dReal> prev_error(ftraj->GetNumWaypoints(),9999.0);
-    vector<dReal> stepsize(ftraj->GetNumWaypoints());
+    vector<dReal> prev_error(num_waypoints,9999.0);
+    vector<dReal> stepsize(num_waypoints);
 
     for(int i = 0; i < stepsize.size(); i++)
     {
-        stepsize[i] = 0.1 * waypoint_manip_group_map.find(i)->second.size();
+        stepsize[i] = 0.3 * _waypoint_manip_group_map.find(i)->second.size();
     }
-           
+    
+
     for(int k = 0; k < 40; k++) // modify the configuration
     {
         if(bPrint)
             RAVELOG_INFO("Iteration: %i\n",k);
         
-
         TrajectoryBasePtr ntraj = RaveCreateTrajectory(GetEnv(),"");
         ntraj->Init(_esRobot->GetActiveConfigurationSpecification());
-        // ntraj->Remove(0,ntraj->GetNumWaypoints());
-        // RAVELOG_INFO("ntraj waypoint number: %i\n",ntraj->GetNumWaypoints());
+        std::vector< std::vector<dReal> > tmp_traj(num_waypoints, std::vector<dReal>(_numdofs,0));
         all_waypoints_stable = true;
 
         if(bPrint)
@@ -2386,6 +2385,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         FindNearestContactRegion();
 
         once_stable_waypoint.clear();
+        non_stable_waypoint.clear();
 
         // for(unsigned int w = 0; w < ftraj->GetNumWaypoints(); w++)
         // {
@@ -2400,9 +2400,13 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         // getchar();
 
         // cout<<"Start to modify the trajectory."<<endl;
-
+        // #pragma omp parallel for schedule(dynamic) num_threads(16)
         for(unsigned int w = 0; w < ftraj->GetNumWaypoints(); w++) // for each configuration in the trjectory
         {
+            RobotBasePtr robot = _esRobotVec[w%_num_robots];
+
+            dReal magnitude, xyz_error, total_error;
+                
             if(bPrint)
                 RAVELOG_INFO("Waypoint: %i\n",w);
 
@@ -2410,9 +2414,10 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             std::vector<dReal> qs(_numdofs); // the initial configuration
             ftraj->GetWaypoint(w,qs);
             
-            _esRobot->SetActiveDOFValues(qs);
+            robot->SetActiveDOFValues(qs);
             
-            GetEnv()->UpdatePublishedBodies();
+            // GetEnv()->UpdatePublishedBodies();
+            
             std::vector<dReal> qs_old = qs; // store the configuration before taking step.
             // if(_parameters->balance_mode != BALANCE_NONE)
             // {
@@ -2420,23 +2425,22 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             // }
 
             // reset waypoint stability state 
-            if(stable_waypoint.find(w)->second == true)
+            if(_stable_waypoint[w] == true)
             {
-                // ntraj->Insert(w,qs,_esRobot->GetActiveConfigurationSpecification());
-                stable_waypoint.find(w)->second = false;
+                // ntraj->Insert(w,qs,robot->GetActiveConfigurationSpecification());
+                _stable_waypoint[w] = false;
                 // continue;
             }
             else
             {
                 if(bPrint)
                     RAVELOG_INFO("Waypoint %i is not stable yet.\n",w);
-                all_waypoints_stable = false;
             }
 
-            bLimit = false;
-            badjointinds.at(w).clear();
+            bool bLimit = false;
+            _badjointinds.at(w).clear();
 
-            bInCollision = false;
+            bool bInCollision = false;
 
 
             if(bPrint)
@@ -2446,9 +2450,9 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             {
                 // Calculate each Jacobian
                 qs_old = qs;
-                xy_error = 0;
-                z_error = 0;
-                rpy_error = 0;
+                _xy_error[w] = 0;
+                _z_error[w] = 0;
+                _rpy_error[w] = 0;
 
                 std::vector<GraphHandlePtr> handles;
 
@@ -2465,20 +2469,19 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 // 4. Obstacle Avoidance
                 if(_parameters->bOBSTACLE_AVOIDANCE)
                 {
-                    UpdateOAJacobianandStep(Transform(),ftraj,w);
+                    UpdateOAJacobianandStep(Transform(),ftraj,w,bInCollision);
                 }
 
-                xyz_error = sqrt(pow(xy_error,2) + pow(z_error,2));
+                xyz_error = sqrt(pow(_xy_error[w],2) + pow(_z_error[w],2));
 
                 //may require another condition to check posture control
-                if((sqrt(pow(xyz_error,2) + pow(rpy_error,2)) < epsilon) &&
-                   (_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog)) &&
+                if((sqrt(pow(xyz_error,2) + pow(_rpy_error[w],2)) < epsilon) &&
+                   (_parameters->balance_mode == BALANCE_NONE || _balance_checkers[w]->CheckSupport(_curcogs[w])) &&
                    (_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false))
                 {
-                    stable_waypoint.find(w)->second = true;
+                    _stable_waypoint[w] = true;
                     if(bPrint)
                         RAVELOG_INFO("Waypoint %i is stable.\n",w);
-                    once_stable_waypoint.push_back(w);
                     break;
                 }
                 else
@@ -2487,33 +2490,33 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                     // if(true)
                     {
                         cout<<"Waypoint: "<<w<<endl;
-                        cout<<"Reach Point: "<<(sqrt(pow(xyz_error,2) + pow(rpy_error,2)) < epsilon)<<endl;
-                        cout<<"balanced: "<<(_parameters->balance_mode == BALANCE_NONE || balance_checker.CheckSupport(curcog))<<endl;
+                        cout<<"Reach Point: "<<(sqrt(pow(xyz_error,2) + pow(_rpy_error[w],2)) < epsilon)<<endl;
+                        cout<<"balanced: "<<(_parameters->balance_mode == BALANCE_NONE || _balance_checkers[w]->CheckSupport(_curcogs[w]))<<endl;
                         cout<<"free of collision: "<<(_parameters->bOBSTACLE_AVOIDANCE == false || bInCollision == false)<<endl;
 
-                        cout<<"xy_error: "<<xy_error<<endl;
-                        cout<<"z_error: "<<z_error<<endl;
-                        cout<<"rpy_error: "<<rpy_error<<endl;
-                        cout<<"cog_error: "<<sqrt((curcog.x-cogtarg.x)*(curcog.x-cogtarg.x) + (curcog.y-cogtarg.y)*(curcog.y-cogtarg.y))<<endl;
+                        cout<<"xy_error: "<<_xy_error[w]<<endl;
+                        cout<<"z_error: "<<_z_error[w]<<endl;
+                        cout<<"rpy_error: "<<_rpy_error[w]<<endl;
+                        cout<<"cog_error: "<< (_curcogs[w]-_cogtargs[w]).lengthsqr2()<<endl;
 
-                        cout<<"curcog: "<<curcog.x<<", "<<curcog.y<<", "<<curcog.z<<endl;
-                        cout<<"cogtarg: "<<cogtarg.x<<", "<<cogtarg.y<<", "<<cogtarg.z<<endl;
+                        cout<<"curcog: "<<_curcogs[w].x<<", "<<_curcogs[w].y<<", "<<_curcogs[w].z<<endl;
+                        cout<<"cogtarg: "<<_cogtargs[w].x<<", "<<_cogtargs[w].y<<", "<<_cogtargs[w].z<<endl;
 
                         cout<<"Link in collision: ";
-                        for(std::set<string>::iterator link_it = link_in_collision.begin(); link_it != link_in_collision.end(); link_it++)
+                        for(std::set<string>::iterator link_it = _links_in_collision[w].begin(); link_it != _links_in_collision[w].end(); link_it++)
                         {
                             cout<<(*link_it)<<" ";
                         }
                         cout<<endl;
 
                         cout<<"Joint in limit: ";
-                        for(std::vector<int>::iterator it = badjointinds.at(w).begin(); it != badjointinds.at(w).end(); it++)
+                        for(std::vector<int>::iterator it = _badjointinds.at(w).begin(); it != _badjointinds.at(w).end(); it++)
                         {
-                            cout<<_esRobot->GetJointFromDOFIndex(_esRobot->GetActiveDOFIndices()[*it])->GetName()<<" ";
+                            cout<<robot->GetJointFromDOFIndex(robot->GetActiveDOFIndices()[*it])->GetName()<<" ";
                         }
                         cout<<endl;
 
-                        // if(!link_in_collision.empty())
+                        // if(!_links_in_collision[w].empty())
                         // {
                         //     getchar();
                         // }
@@ -2538,11 +2541,11 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 // Calculate steps
                 if(_parameters->balance_mode != BALANCE_NONE)
                 {
-                    total_error = sqrt(pow(xyz_error,2) + pow(rpy_error,2) + pow(dcog(1)/ccog,2) + pow(dcog(2)/ccog,2));
+                    total_error = sqrt(pow(xyz_error,2) + pow(_rpy_error[w],2) + pow(_dcog[w](1)/_ccog,2) + pow(_dcog[w](2)/_ccog,2));
                 }
                 else
                 {
-                    total_error = sqrt(pow(xyz_error,2) + pow(rpy_error,2));
+                    total_error = sqrt(pow(xyz_error,2) + pow(_rpy_error[w],2));
                 }
                 
                 if(total_error > stepsize[w])
@@ -2552,33 +2555,32 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 // NEWMAT::ColumnVector tempstep;
                 // tempstep.ReSize(_numdofs);
-                step = 0;
-                balance_step = 0;
-                oa_step = 0;
-                zrpy_step = 0;
-                xy_step = 0; 
-                pc_step = 0;
-                int_step = 0;
-                m_step = 0;
+                _step[w] = 0;
+                _balance_step[w] = 0;
+                _oa_step[w] = 0;
+                _zrpy_step[w] = 0;
+                _xy_step[w] = 0; 
+                _pc_step[w] = 0;
+                _int_step[w] = 0;
 
                 string highest_priority = "None";
 
-                int_step = JINTplus * dint;
-                JHP = &JINT;
-                JHPplus = &JINTplus;
-                dhp = &dint;
+                _int_step[w] = _JINTplus[w] * _dint[w];
+                _JHP[w] = &_JINT[w];
+                _JHPplus[w] = &_JINTplus[w];
+                _dhp[w] = &_dint[w];
 
                 if(_parameters->bPOSTURE_CONTROL)
                 {
-                    pc_step = JPCplus * dpc + (NEWMAT::IdentityMatrix(_numdofs) - JPCplus*JPC) * int_step;
+                    _pc_step[w] = _JPCplus[w] * _dpc[w] + (NEWMAT::IdentityMatrix(_numdofs) - _JPCplus[w]*_JPC[w]) * _int_step[w];
                     highest_priority = "PC";
-                    JHP = &JPC;
-                    JHPplus = &JPCplus;
-                    dhp = &dpc;
+                    _JHP[w] = &_JPC[w];
+                    _JHPplus[w] = &_JPCplus[w];
+                    _dhp[w] = &_dpc[w];
                 }
                 else
                 {
-                    pc_step = int_step;
+                    _pc_step[w] = _int_step[w];
                 }
 
                 // if(_parameters->balance_mode != BALANCE_NONE)
@@ -2607,12 +2609,20 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //     oa_step = pc_step;
                 // }
 
+                NEWMAT::Matrix JM;
+                NEWMAT::Matrix JMplus;
+                NEWMAT::ColumnVector dm;
+                NEWMAT::SymmetricMatrix Mm;
+                NEWMAT::SymmetricMatrix Mminv;
+                NEWMAT::DiagonalMatrix Regm;
+                NEWMAT::ColumnVector m_step;
+
                 // if(strcmp(highest_priority.c_str(),"None") == 0)
                 if(_parameters->balance_mode == BALANCE_NONE)
                 {
-                    JM = JXYZRPY;
-                    JMplus = JXYZRPYplus;
-                    dm = dxyzrpy;
+                    JM = _JXYZRPY[w];
+                    JMplus = _JXYZRPYplus[w];
+                    dm = _dxyzrpy[w];
                 }
                 else
                 {
@@ -2631,12 +2641,12 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                     // }
 
                     JM.ReSize(0,_numdofs);
-                    JM &= JXYZRPY;
-                    JM &= JCOG;
+                    JM &= _JXYZRPY[w];
+                    JM &= _JCOG[w];
 
                     dm.ReSize(0);
-                    dm &= dxyzrpy;
-                    dm &= dcog;
+                    dm &= _dxyzrpy[w];
+                    dm &= _dcog[w];
 
                     JMplus.ReSize(_numdofs,JM.Nrows());
                     Mm.ReSize(JM.Nrows());
@@ -2657,11 +2667,11 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 if(_parameters->bOBSTACLE_AVOIDANCE)
                 {
-                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * (JOAplus*doa + (NEWMAT::IdentityMatrix(_numdofs) - JOAplus*JOA) * int_step);
+                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * (_JOAplus[w]*_doa[w] + (NEWMAT::IdentityMatrix(_numdofs) - _JOAplus[w]*_JOA[w]) * _int_step[w]);
                 }
                 else
                 {
-                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * int_step;
+                    m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * _int_step[w];
                 }
 
                 // if(strcmp(highest_priority.c_str(),"None") == 0 or strcmp(highest_priority.c_str(),"PC") == 0)
@@ -2683,9 +2693,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 // step = JXYZRPYplus * dxyzrpy;
 
-                step = m_step;
-
-                step = magnitude * step;
+                _step[w] = magnitude * m_step;
 
                 // if(k > 0 && step.Sum() < 0.001)
                 // {
@@ -2699,12 +2707,12 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 for(int i = 0; i < _numdofs; i++)
                 {
-                    qs[i] = qs_old[i] - step(i+1);
+                    qs[i] = qs_old[i] - _step[w](i+1);
                     if(qs[i] < _lowerLimit[i] || qs[i] > _upperLimit[i])
                     {
                         if(bPrint)
                         {
-                            RAVELOG_INFO("Joint: %s, value: %f, step: %f, limit: %f <=> %f\n",_esRobot->GetJointFromDOFIndex(_esRobot->GetActiveDOFIndices()[i])->GetName().c_str(),qs_old[i],step(i+1),_lowerLimit[i],_upperLimit[i]);
+                            RAVELOG_INFO("Joint: %s, value: %f, step: %f, limit: %f <=> %f\n",robot->GetJointFromDOFIndex(robot->GetActiveDOFIndices()[i])->GetName().c_str(),qs_old[i],_step[w](i+1),_lowerLimit[i],_upperLimit[i]);
                         
                             cout<<"over joint limit: "<<i<<endl;
                             cout<<qs[i]<<", limit: ("<<_lowerLimit[i]<<","<<_upperLimit[i]<<")"<<endl;
@@ -2715,7 +2723,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                         if(qs[i] > _upperLimit[i])
                             qs[i] = _upperLimit[i];
 
-                        badjointinds.at(w).push_back(i); //note this will never add the same joint twice
+                        _badjointinds.at(w).push_back(i); //note this will never add the same joint twice
 
                         bLimit = true;
 
@@ -2750,14 +2758,14 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //         // handles.push_back(_esEnv->drawarrow(cct_origin, cct_y, 0.008, RaveVector<float>(0, 1, 0, 1)));
                 //         // handles.push_back(_esEnv->drawarrow(cct_origin, cct_z, 0.008, RaveVector<float>(0, 0, 1, 1)));
 
-                //         _esRobot->SetActiveDOFValues(qs_old);
+                //         robot->SetActiveDOFValues(qs_old);
 
 
-                //         RobotBase::ManipulatorPtr target_manip = _esRobot->GetManipulators()[GetManipIndex.find(manip_name)->second];
+                //         RobotBase::ManipulatorPtr target_manip = robot->GetManipulators()[GetManipIndex.find(manip_name)->second];
 
                 //         Vector from_vec = target_manip->GetTransform().trans;
 
-                //         _esRobot->SetActiveDOFValues(qs);
+                //         robot->SetActiveDOFValues(qs);
 
                 //         Vector to_vec = target_manip->GetTransform().trans;
                 //         to_vec.x = 20*(to_vec.x - from_vec.x) + from_vec.x;
@@ -2775,7 +2783,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 //         //     qs_2[i] = qs_old[i] - magnitude * step_zrpy(i+1);
                 //         // }
 
-                //         // _esRobot->SetActiveDOFValues(qs_2);
+                //         // robot->SetActiveDOFValues(qs_2);
 
                 //         // Vector to_vec_2 = target_manip->GetTransform().trans;
                 //         // to_vec_2.x = 20*(to_vec_2.x - from_vec.x) + from_vec.x;
@@ -2786,7 +2794,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
                 //         cout<<manip_name<<": ("<<to_vec.x-from_vec.x<<","<<to_vec.y-from_vec.y<<","<<to_vec.z-from_vec.z<<")"<<endl;
 
-                //         _esRobot->SetActiveDOFValues(qs_old);
+                //         robot->SetActiveDOFValues(qs_old);
 
                 //     }
 
@@ -2799,7 +2807,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             if(bPrint)
                 RAVELOG_INFO("Move a step.\n");
 
-            if(total_error >= prev_error[w] && !stable_waypoint.find(w)->second)
+            if(total_error >= prev_error[w] && !_stable_waypoint[w])
             {
                 stepsize[w] = stepsize[w]/2;
                 // xyz_error = prev_error[w];
@@ -2808,7 +2816,6 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
             prev_error[w] = total_error;
             
-
             // if(sqrt(pow(xyz_error,2) + pow(rpy_error,2)) >= prev_error[w] && !stable_waypoint.find(w)->second)
             // {
             //     stepsize[w] = stepsize[w]/2;
@@ -2828,16 +2835,30 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             // }
             // cout<<endl;
 
-            _esRobot->SetActiveDOFValues(qs);
+            // robot->SetActiveDOFValues(qs);
 
-            GetEnv()->UpdatePublishedBodies();
+            // GetEnv()->UpdatePublishedBodies();
 
-            ntraj->Insert(w,qs,_esRobot->GetActiveConfigurationSpecification());
+            tmp_traj[w] = qs;
 
             // getchar();
 
             if(bPrint)
                 RAVELOG_INFO("=================================================\n");
+        }
+
+        for(unsigned int w = 0; w < ftraj->GetNumWaypoints(); w++)
+        {
+            if(_stable_waypoint[w] == true)
+            {
+                once_stable_waypoint.push_back(w);
+            }
+            else
+            {
+                non_stable_waypoint.push_back(w);
+                all_waypoints_stable = false;
+            }
+            ntraj->Insert(w,tmp_traj[w],_esRobot->GetActiveConfigurationSpecification());
         }
 
         // cout<<"Number of contact consistent positions: "<<contact_consistent_manip_translation.size()<<endl;
@@ -2853,26 +2874,34 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         // }
         // cout<<endl;
 
+
         if(bPrint)
         {
-            cout<<"Total Waypoints: "<<ftraj->GetNumWaypoints()<<", Non-stable waypoints: ";
-            for(size_t waypoint_i = 0; waypoint_i < ftraj->GetNumWaypoints(); waypoint_i++)
+            cout<<"Total Waypoints: "<<ftraj->GetNumWaypoints()<<", Non-stable Waypoint Num: "<< non_stable_waypoint.size() <<", Non-stable waypoints: ";
+            for(vector<size_t>::iterator nsw_it = non_stable_waypoint.begin(); nsw_it != non_stable_waypoint.end(); nsw_it++)
             {
-                for(vector<size_t>::iterator osw_it = once_stable_waypoint.begin(); osw_it != once_stable_waypoint.end(); osw_it++)
-                {
-                    if(*osw_it == waypoint_i)
-                    {
-                        break;
-                    }
-                    else if(*osw_it > waypoint_i)
-                    {
-                        cout<<waypoint_i<<' ';
-                        break;
-                    }
-                    
-                }
+                cout << (*nsw_it) << ' ';   
             }
-            cout<<endl;
+            cout << endl;
+
+            // cout<<"Total Waypoints: "<<ftraj->GetNumWaypoints()<<", Non-stable waypoints: ";
+            // for(size_t waypoint_i = 0; waypoint_i < ftraj->GetNumWaypoints(); waypoint_i++)
+            // {
+            //     for(vector<size_t>::iterator osw_it = once_stable_waypoint.begin(); osw_it != once_stable_waypoint.end(); osw_it++)
+            //     {
+            //         if(*osw_it == waypoint_i)
+            //         {
+            //             break;
+            //         }
+            //         else if(*osw_it > waypoint_i)
+            //         {
+            //             cout << waypoint_i << ' ';
+            //             break;
+            //         }
+                    
+            //     }
+            // }
+            // cout<<endl;
         }
 
         // for(unsigned int w = 0; w < ftraj->GetNumWaypoints(); w++)
@@ -2906,18 +2935,22 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
     return result;
 }
 
-Vector ElasticStrips::RPYIdentityOffsets[8] = { Vector(M_PI,M_PI,M_PI),
-                                            Vector(M_PI,M_PI,-M_PI),
-                                            Vector(M_PI,-M_PI,M_PI),
-                                            Vector(M_PI,-M_PI,-M_PI),
-                                            Vector(-M_PI,M_PI,M_PI),
-                                            Vector(-M_PI,M_PI,-M_PI),
-                                            Vector(-M_PI,-M_PI,M_PI),
-                                            Vector(-M_PI,-M_PI,-M_PI)};
-
 void ElasticStrips::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
 {
-    
+    //used in QuatToRPY
+    dReal a,b,c,d;
+    Vector RPYIdentityOffsets[8] = { Vector(M_PI,M_PI,M_PI),
+                                    Vector(M_PI,M_PI,-M_PI),
+                                    Vector(M_PI,-M_PI,M_PI),
+                                    Vector(M_PI,-M_PI,-M_PI),
+                                    Vector(-M_PI,M_PI,M_PI),
+                                    Vector(-M_PI,M_PI,-M_PI),
+                                    Vector(-M_PI,-M_PI,M_PI),
+                                    Vector(-M_PI,-M_PI,-M_PI)};
+    dReal min_dist;
+    Vector temp_vec;
+    dReal temp_dist;
+
     a = tm.rot.x;
     b = tm.rot.y;
     c = tm.rot.z;
@@ -2931,46 +2964,49 @@ void ElasticStrips::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi
 
     //go through all the identities and find which one minimizes the total rotational distance
     //don't need to consider +/-2pi b/c all three angles are between -pi and pi
-   _min_dist = 10000;
+    min_dist = 10000;
     for(int i =0; i < 9; i++)
     {
 
         if(i == 0) //for first element, use original values
         {
-            _temp_vec.x = psi;
-            _temp_vec.y = theta;
-            _temp_vec.z = phi;
+            temp_vec.x = psi;
+            temp_vec.y = theta;
+            temp_vec.z = phi;
         }
         else
         {
-            _temp_vec.x = psi + RPYIdentityOffsets[i-1].x;
-            _temp_vec.y = -theta + RPYIdentityOffsets[i-1].y;//note that theta is negative
-            _temp_vec.z = phi + RPYIdentityOffsets[i-1].z;
+            temp_vec.x = psi + RPYIdentityOffsets[i-1].x;
+            temp_vec.y = -theta + RPYIdentityOffsets[i-1].y;//note that theta is negative
+            temp_vec.z = phi + RPYIdentityOffsets[i-1].z;
         }
         
-        _temp_dist = _temp_vec.lengthsqr3();
-        if(_temp_dist < _min_dist)
+        temp_dist = temp_vec.lengthsqr3();
+        if(temp_dist < min_dist)
         {
-            _min_dist = _temp_dist;
-            psi = _temp_vec.x;
-            theta = _temp_vec.y;
-            phi = _temp_vec.z;
+            min_dist = temp_dist;
+            psi = temp_vec.x;
+            theta = temp_vec.y;
+            phi = temp_vec.z;
         }
     }
-
 
     //RAVELOG_INFO("psi: %f, theta: %f, phi: %f\n",psi,theta,phi);
 }
 
 int ElasticStrips::invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricMatrix& A, NEWMAT::SymmetricMatrix &Afixed)
 {
+    //for inverse conditioning
+    NEWMAT::DiagonalMatrix S;
+    NEWMAT::Matrix V;
+    
     int didfix = 0;
-    NEWMAT::EigenValues(A,_S,_V);
+    NEWMAT::EigenValues(A,S,V);
     // Find the maximum eigenvalue
     dReal maxEig = 0;
     dReal minEig = 0;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
+    for (int i = 1; i <= S.Nrows(); ++i){
+        dReal e = S(i);
         if (e > maxEig) maxEig = e;
         if (i == 1 || e < minEig) minEig = e;
     }
@@ -2978,19 +3014,19 @@ int ElasticStrips::invConditioningBound(dReal maxConditionNumber, NEWMAT::Symmet
 
     dReal minEigDesired = maxEig/maxConditionNumber;
     int notfixcount = 0;
-    for (int i = 1; i <= _S.Nrows(); ++i){
-        dReal e = _S(i);
+    for (int i = 1; i <= S.Nrows(); ++i){
+        dReal e = S(i);
         if (e < minEigDesired) {e = minEigDesired; didfix = 1;}
         else
             notfixcount++;
             
         if (maxEig > 100) { e = e/maxEig*100;}
-        _S(i) = e;
+        S(i) = e;
     }
         
 
     //this will do the inversion 
-    Afixed << _V * _S.i() * _V.t();
+    Afixed << V * S.i() * V.t();
     return didfix;
 }
 

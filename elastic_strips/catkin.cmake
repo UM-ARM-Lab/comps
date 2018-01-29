@@ -43,4 +43,5 @@ target_link_libraries("${PROJECT_NAME}_plugin"
     gmp
     ${Boost_LIBRARIES}
     ${catkin_LIBRARIES}
+    ${OpenMP_LIBRARIES}
 )

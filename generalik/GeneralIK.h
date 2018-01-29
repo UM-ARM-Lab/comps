@@ -109,6 +109,7 @@ private:
     int _dimspergoal;
 
     bool bTRANSLATION_ONLY;
+    bool bEXACT_COG;
     bool bPRINT;
     bool bDRAW;
     bool bWRITETRAJ;

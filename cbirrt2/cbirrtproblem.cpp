@@ -186,6 +186,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
     bool bObstacleAvoidance = false;   // from obstacle avoidance
     bool bCOG = false;                 // from balance
     bool bReuseGIWC = false;           // from reusegiwc
+    bool bExactCOG = false;            // from exact_com
     TransformMatrix robot_tf;          // from robottm
     TransformMatrix temp_tf_matrix; // Used in maniptm
     Transform temp_tf;              // Used in maniptm
@@ -384,6 +385,9 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         else if (stricmp(cmd.c_str(), "reusegiwc") == 0){
             bReuseGIWC = true;
         }
+        else if (stricmp(cmd.c_str(), "exactcom") == 0){
+            bExactCOG = true;
+        }
         else break;
 
         if( !sinput ) {
@@ -445,7 +449,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         for(int i = 0 ; i < supportpolyy.size(); i ++)
             ikparams.push_back(supportpolyy[i]);
     }
-    else if (balance_mode == 2)
+    else if(balance_mode == 2)
     {
         ikparams.push_back(gravity.x);
         ikparams.push_back(gravity.y);
@@ -482,7 +486,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             same_support_manips = false;
         }
 
-        // unsigned long before_GIWC = timeGetTime();
+        unsigned long before_GIWC = timeGetTime();
 
         if(same_support_manips && bReuseGIWC)
         {
@@ -503,7 +507,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
             prev_support_manips.clear();
         }        
 
-        // int GIWC_timetaken = timeGetTime() - before_GIWC;
+        int GIWC_timetaken = timeGetTime() - before_GIWC;
 
         // RAVELOG_INFO("GIWC Got! (%d ms)\n",GIWC_timetaken);
     }
@@ -519,6 +523,19 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         ikparams.push_back(1);//don't do rotation
     else
         ikparams.push_back(0);//do rotation
+
+    if(bExactCOG)
+    {
+        ikparams.push_back(1);//converge to the COG no matter if it is in balance or not
+        ikparams.push_back(cogtarg.x);
+        ikparams.push_back(cogtarg.y);
+        ikparams.push_back(cogtarg.z);
+    }
+    else
+    {
+        ikparams.push_back(0);//converge to the COG no matter if it is in balance or not
+    }
+        
 
     unsigned long starttime = timeGetTime();
 
@@ -1110,6 +1127,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
         if (curr_support_manips.size() > 0) {
             GetGIWC(curr_support_manips, curr_support_mus, params->vpathsupportcone);
         }
+
     }
 
     params->vgravity.push_back(gravity.x);
@@ -1493,7 +1511,7 @@ int CBirrtProblem::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** poin
     sprintf (flags, "qhull QJ Pp s Tc ");
     //FILE* junk = fopen("qhullout.txt","w");
 
-    exitcode= qh_new_qhull (2, numPointsIn, pointsIn, false,
+    exitcode = qh_new_qhull(2, numPointsIn, pointsIn, false,
                             flags, NULL, stderr);
     //fclose(junk);
     *numPointsOut = qh num_vertices;
@@ -1542,6 +1560,107 @@ int CBirrtProblem::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** poin
 
     return exitcode;
 }
+
+int CBirrtProblem::convexHull6D(coordT* pointsIn, int numPointsIn, std::vector< std::vector<double> >& facet_coefficients) {
+
+    char flags[250];
+    int exitcode;
+    facetT *facet, *newFacet;
+    int curlong, totlong;
+    facet_coefficients.clear();
+
+    float min_value = 0.000001;
+
+    sprintf (flags, "qhull QJ Pp s Tc ");
+
+    // cout<<"input points."<<endl;
+    // for(int i = 0; i < numPointsIn; i++)
+    // {
+    //     cout<<pointsIn[i*6+0]<<" "<<pointsIn[i*6+1]<<" "<<pointsIn[i*6+2]<<" "<<pointsIn[i*6+3]<<" "<<pointsIn[i*6+4]<<" "<<pointsIn[i*6+5]<<endl;
+    // }
+
+    exitcode= qh_new_qhull (6, numPointsIn, pointsIn, false, flags, NULL, stderr);
+
+    FORALLfacets {
+        facet->seen = 0;
+    }
+
+    facet = qh facet_list;
+    int facet_numbers = qh num_facets;
+
+    set<string> facet_hash_set;
+    stringstream coeff_string;
+    int rounded_coeff;
+
+    // cout<<"facet parameters"<<endl;
+
+    for(int i = 0; i < facet_numbers; i++)
+    {
+        // get the facet equations.
+        coordT* normal = facet->normal;
+        coordT offset = facet->offset;
+        
+        string hash = "";
+
+        if(fabs(offset) < 0.0001)
+        {
+            std::vector<double> coeff(7);
+            if(fabs(offset) < min_value)
+            {
+                coeff[0] = 0;
+            }
+            else
+            {
+                coeff[0] = offset;
+            }
+            rounded_coeff = round(coeff[0]*1000);
+            if(rounded_coeff == 0) rounded_coeff = 0; // eliminate negative 0
+            coeff_string << rounded_coeff;
+            hash = hash + coeff_string.str();
+            coeff_string.str(std::string());
+            coeff_string.clear();
+
+            for(int i = 0; i < 6; i++)
+            {
+                if(fabs(normal[i]) < min_value)
+                {
+                    coeff[i+1] = 0;
+                }
+                else
+                {
+                    coeff[i+1] = normal[i];
+                }
+                rounded_coeff = round(coeff[i+1]*1000);
+                if(rounded_coeff == 0) rounded_coeff = 0; // eliminate negative 0
+                coeff_string << rounded_coeff;
+                hash = hash + "," + coeff_string.str();
+                coeff_string.str(std::string());
+                coeff_string.clear();
+            }
+
+            if(facet_hash_set.find(hash) == facet_hash_set.end())
+            {
+                facet_coefficients.push_back(coeff);
+                facet_hash_set.insert(hash);
+                // cout<<hash<<endl;
+                // cout<<coeff[0]<<" "<<coeff[1]<<" "<<coeff[2]<<" "<<coeff[3]<<" "<<coeff[4]<<" "<<coeff[5]<<" "<<coeff[6]<<endl;
+            }
+
+        }
+        if(i != facet_numbers-1)
+        {
+            newFacet = (facetT*)facet->next;
+            facet = newFacet;
+        }
+
+    }
+
+    qh_freeqhull(!qh_ALL);
+    qh_memfreeshort (&curlong, &totlong);
+
+    return exitcode;
+}
+
 
 
 void CBirrtProblem::compute_convex_hull(void)
@@ -1894,6 +2013,8 @@ NEWMAT::ReturnMatrix CBirrtProblem::GetGIWCSpanForm(std::vector<std::string>& ma
 }
 
 void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dReal>& mus, std::vector<dReal>& ikparams) {
+
+    // unsigned long start = timeGetTime();
     
     // cout<<"Beginning of GetGIWC."<<endl;
     // int a;
@@ -1910,38 +2031,68 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm(manip_ids, mus);
     // RAVELOG_INFO("giwc_span_cdd Rows: %d, Col: %d\n",giwc_span.Nrows(),giwc_span.Ncols());
 
+
+    // int al;
+    // std::cin>>al;
+
+    // unsigned long after_dd_getspanform = timeGetTime();
+    // RAVELOG_INFO("after_dd_getspanform: %d\n",(after_dd_getspanform-start));
+
     // graphptrs.clear();
     // draw_cone(GetEnv(), giwc_span, Transform(), giwc_span.Nrows(), giwc_span.Ncols());
 
-    dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
-    giwc_span_cdd->representation = dd_Generator;
+    // dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
+    // giwc_span_cdd->representation = dd_Generator;
+
+    // unsigned long after_dd_creatematrix = timeGetTime();
+    // RAVELOG_INFO("after_dd_creatematrix: %d\n",(after_dd_creatematrix-after_dd_getspanform));
 
     // cout<<"giwc_span_cdd."<<endl;
     // int c;
     // c = getchar();
 
+    std::vector<coordT> pointsIn((giwc_span.Nrows()+1)*6);
+    pointsIn[0] = 0;
+    pointsIn[1] = 0;
+    pointsIn[2] = 0;
+    pointsIn[3] = 0;
+    pointsIn[4] = 0;
+    pointsIn[5] = 0;
+
     // TODO: Is there a better way than doing this?
     for (int r = 0; r < giwc_span.Nrows(); r++) {
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
-        dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
+        // dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
         for (int c = 0; c < giwc_span.Ncols(); c++) {
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
             // dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * 1e4));
-            dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * 10000));
+            // dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * 10000));
+            pointsIn[(r+1)*6 + c] = 0.0001 * round(giwc_span(r+1, c+1) * 10000);
         }
     }
+
+    // unsigned long after_dd_set_si = timeGetTime();
+    // RAVELOG_INFO("after_dd_set_si: %d\n",(after_dd_set_si-after_dd_getspanform));
+
+    
+    int numPointsIn = giwc_span.Nrows()+1;
+    std::vector< std::vector<double> > facet_coefficients;
+    convexHull6D(&pointsIn[0], numPointsIn, facet_coefficients);
 
     // cout<<"dd_set_si."<<endl;
     // int d;
     // d = getchar();
 
-    dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
-    if (err != dd_NoError) {
-        RAVELOG_INFO("CDD Error: ");
-        dd_WriteErrorMessages(stdout, err);
-        throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
-    }
+    // unsigned long after_qhull = timeGetTime();
+    // RAVELOG_INFO("after_qhull: %d\n",(after_qhull-after_dd_set_si));
+
+    // dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
+    // if (err != dd_NoError) {
+    //     RAVELOG_INFO("CDD Error: ");
+    //     dd_WriteErrorMessages(stdout, err);
+    //     throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
+    // }
 
     // cout<<"poly."<<endl;
     // int e;
@@ -1950,7 +2101,7 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
     // unsigned long after_dd_matrix2poly2 = timeGetTime();
     // RAVELOG_INFO("after_dd_matrix2poly2: %d\n",(after_dd_matrix2poly2-after_dd_set_si));
 
-    dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
+    // dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
 
     // RAVELOG_INFO("Ustance Size:(%d,%d)",giwc_face_cdd->rowsize,giwc_face_cdd->colsize);
 
@@ -1960,29 +2111,52 @@ void CBirrtProblem::GetGIWC(std::vector<std::string>& manip_ids, std::vector<dRe
 
     // Add to ikparams
     prev_giwc.clear();
-    ikparams.push_back(giwc_face_cdd->rowsize);
-    prev_giwc.push_back(giwc_face_cdd->rowsize);
+    // ikparams.push_back(giwc_face_cdd->rowsize);
+    // prev_giwc.push_back(giwc_face_cdd->rowsize);
 
-    for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
+    // for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
+    //     dd_Arow point;
+    //     // if(dd_Redundant(giwc_face_cdd,row,point,&err) == 0)
+    //     if(true)
+    //     {
+    //         // Note this skips element 0 of each row, which should always be 0
+    //         for (int col = 0; col < giwc_face_cdd->colsize; col++) {
+    //             cout<<dd_get_d(giwc_face_cdd->matrix[row][col])<<" ";
+    //         }
+    //         cout<<endl;
+    //     }
+    // }
+
+    // for (int row = 0; row < giwc_face_cdd->rowsize; row++) {
+    //     // Note this skips element 0 of each row, which should always be 0
+    //     for (int col = 1; col < giwc_face_cdd->colsize; col++) {
+    //         ikparams.push_back(dd_get_d(giwc_face_cdd->matrix[row][col]));
+    //         prev_giwc.push_back(ikparams[ikparams.size()-1]);
+    //     }
+    // }
+
+    ikparams.push_back(facet_coefficients.size());
+    prev_giwc.push_back(facet_coefficients.size());
+    for (int row = 0; row < facet_coefficients.size(); row++) {
         // Note this skips element 0 of each row, which should always be 0
-        for (int col = 1; col < giwc_face_cdd->colsize; col++) {
-            ikparams.push_back(dd_get_d(giwc_face_cdd->matrix[row][col]));
+        for (int col = 1; col < 7; col++) {
+            ikparams.push_back(-facet_coefficients[row][col]);
             prev_giwc.push_back(ikparams[ikparams.size()-1]);
         }
     }
 
     giwc_span.ReleaseAndDelete();
-    dd_FreeMatrix(giwc_face_cdd);
+    // dd_FreeMatrix(giwc_face_cdd);
     // cout<<"Free giwc_face_cdd."<<endl;
     // int g;
     // g = getchar();
     
-    dd_FreePolyhedra(poly);
+    // dd_FreePolyhedra(poly);
     // cout<<"Free poly."<<endl;
     // int h;
     // h = getchar();
     
-    dd_FreeMatrix(giwc_span_cdd);
+    // dd_FreeMatrix(giwc_span_cdd);
     // cout<<"Free giwc_span_cdd."<<endl;
     // int i;
     // i = getchar();
@@ -2077,22 +2251,22 @@ void CBirrtProblem::GetSupportPolygon(std::vector<string>& supportlinks, std::ve
 
     centerx = centroid.x;//centerx/numPointsOut;
     centery = centroid.y;//centery/numPointsOut;
-    //RAVELOG_INFO("center %f %f\n",centerx, centery);
+    // RAVELOG_INFO("center %f %f\n",centerx, centery);
 
     for(int i =0; i < numPointsOut; i++)
     {
         polyx[i] = polyscale.x*(polyx[i] - centerx) + centerx + polytrans.x;
         polyy[i] = polyscale.y*(polyy[i] - centery) + centery + polytrans.y;
         tempvecs[i] = RaveVector<float>(polyx[i],polyy[i],0);
+        // cout<<"("<<polyx[i]<<","<<polyy[i]<<")"<<endl;
     }
 
     
 
     //close the polygon
     tempvecs[tempvecs.size()-1] = RaveVector<float>(polyx[0],polyy[0],0);
-    GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
-    graphptrs.push_back(graphptr);
-
+    // GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
+    // graphptrs.push_back(graphptr);
 
     free(pointsOut);
 }

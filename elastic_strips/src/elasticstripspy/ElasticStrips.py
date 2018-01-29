@@ -4,6 +4,7 @@ __author__ = 'yu-chi'
 
 import openravepy as rave
 import numpy as np
+import IPython
 
 from .TransformMatrix import SerializeTransform
 
@@ -52,6 +53,12 @@ class ElasticStrips(object):
             self.manip_indices[manip] = index
             self.manip_indices[manip.GetName()] = index
 
+        # clone the robot for parallelization in C++
+        # while(len(self.env.GetRobots()) < 5):
+        #     new_robot = rave.RaveCreateRobot(self.env,'')
+        #     new_robot.Clone(self.env.GetRobot(self.robotname),0)
+        #     new_robot.SetName(self.robotname+"_clone_"+str(len(self.env.GetRobots())))
+        #     self.env.AddRobot(new_robot)
 
     # def DoGeneralIK(self, execute=None, gettime=None, norot=None, returnclosest=None, robottm=None, maniptm=None,
     #                 checkcollisionlink=None, selfcollisionlinkpair=None, obstacles=None, movecog=None,
@@ -281,8 +288,9 @@ class ElasticStrips(object):
             cmd.append("gettime")
 
         if contact_manips is not None:
+            cmd.append("contact_manips")
+            cmd.append(len(contact_manips))
             for i,manips in enumerate(contact_manips):
-                cmd.append("contact_manips")
                 cmd.append(i)
                 cmd.append(len(manips))
                 for manip in manips:
@@ -290,8 +298,9 @@ class ElasticStrips(object):
                     cmd.append(manip[1])
 
         if desiredmanippose is not None:
+            cmd.append("desiredmanippose")
+            cmd.append(len(desiredmanippose))
             for waypoints in desiredmanippose:
-                cmd.append("desiredmanippose")
                 cmd.append(waypoints[0][0]) # index
                 cmd.append(len(waypoints))
                 for wp in waypoints:

@@ -3,24 +3,38 @@
 
 Balance::Balance(RobotBasePtr r, std::vector<string> s_links, Vector p_scale, Vector p_trans)
 {
-    RAVELOG_INFO("Balance Constructor.\n");
-    Robot = r;
-    supportlinks = s_links;
-    polyscale = p_scale;
-    polytrans = p_trans;
-    balance_mode = BALANCE_SUPPORT_POLYGON;
-    RAVELOG_INFO("Initializing parameters.\n");
+    // RAVELOG_INFO("Balance Constructor.\n");
+    _Robot = r;
+    _supportlinks = s_links;
+    _polyscale = p_scale;
+    _polytrans = p_trans;
+    _balance_mode = BALANCE_SUPPORT_POLYGON;
+
+    for(int i = 0; i < s_links.size(); i++)
+    {
+        // _manip_index_name_map.insert(std::make_pair(i,s_links[i]));
+		_manip_name_index_map.insert(std::make_pair(s_links[i],i));
+    }
+
+    // RAVELOG_INFO("Initializing parameters.\n");
     InitializeBalanceParameters();
 }
 
 Balance::Balance(RobotBasePtr r, Vector g, std::vector<string> s_manips, std::vector<dReal> s_mus)
 {
-    Robot = r;
-    gravity = g;
-    support_manips = s_manips;
-    support_mus = s_mus;
-    balance_mode = BALANCE_GIWC;
-    InitializeBalanceParameters();
+    _Robot = r;
+    _gravity = g;
+    _support_manips = s_manips;
+    _support_mus = s_mus;
+    _balance_mode = BALANCE_GIWC;
+
+    for(int i = 0; i < s_manips.size(); i++)
+    {
+        // _manip_index_name_map.insert(std::make_pair(i,s_manips[i]));
+		_manip_name_index_map.insert(std::make_pair(s_manips[i],i));
+    }
+
+    // InitializeBalanceParameters();
 }
 
 NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
@@ -29,7 +43,7 @@ NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
         return _computed_contact_surface_cones.find(manipname)->second;
     }
     else{
-        RobotBase::ManipulatorPtr p_manip = Robot->GetManipulator(manipname);
+        RobotBase::ManipulatorPtr p_manip = _Robot->GetManipulator(manipname);
         Vector manip_dir = p_manip->GetLocalToolDirection();
 
         std::vector<Vector> support_points = GetSupportPoints(p_manip);
@@ -59,11 +73,24 @@ NEWMAT::ReturnMatrix Balance::GetSurfaceCone(string& manipname, dReal mu)
 
         NEWMAT::Matrix mat = f_cones_diagonal * a_surf_stacked; // Dot product
 
+        // omit redundant rows, useless, no redundant rows
+        dd_ErrorType err;
+        dd_MatrixPtr contact_span_cdd = dd_CreateMatrix(mat.Nrows(), mat.Ncols()+1);
+        for (int r = 0; r < mat.Nrows(); r++) {
+        // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
+            dd_set_si(contact_span_cdd->matrix[r][0], 0.0);
+            for (int c = 0; c < mat.Ncols(); c++) {
+                dd_set_si(contact_span_cdd->matrix[r][c+1], mat(r+1, c+1));
+            }
+        }
+
         _computed_contact_surface_cones.insert(std::pair<string,NEWMAT::Matrix>(manipname,mat));
 
+        dd_FreeMatrix(contact_span_cdd);
         f_cones_diagonal.ReleaseAndDelete();
         a_surf_stacked.ReleaseAndDelete();
         mat.Release();
+
         return mat;
     }
 }
@@ -217,12 +244,12 @@ void Balance::GetAStance(Transform tf, NEWMAT::Matrix* mat, int offset_r) {
 
 NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
 {
-    int num_manips = support_manips.size();
+    int num_manips = _support_manips.size();
     std::vector<NEWMAT::Matrix> matrices;
     int total_rows = 0;
 
     for (int i = 0; i < num_manips; i++) {
-        matrices.push_back(GetSurfaceCone(support_manips[i], support_mus[i]));
+        matrices.push_back(GetSurfaceCone(_support_manips[i], _support_mus[i]));
         total_rows += matrices.back().Nrows();
     }
 
@@ -240,7 +267,7 @@ NEWMAT::ReturnMatrix Balance::GetGIWCSpanForm()
     NEWMAT::Matrix a_stance_stacked(6 * num_manips, 6);
 
     for (int i = 0; i < num_manips; i++) {
-        GetAStance(Robot->GetManipulator(support_manips[i])->GetTransform(), &a_stance_stacked, 6*i);
+        GetAStance(_Robot->GetManipulator(_support_manips[i])->GetTransform(), &a_stance_stacked, 6*i);
     }
 
     NEWMAT::Matrix mat = s_cones_diagonal * a_stance_stacked; // Dot product
@@ -263,44 +290,66 @@ void Balance::GetGIWC()
     NEWMAT::Matrix giwc_span = GetGIWCSpanForm();
 
 
-    dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
-    giwc_span_cdd->representation = dd_Generator;
+    // dd_MatrixPtr giwc_span_cdd = dd_CreateMatrix(giwc_span.Nrows(), giwc_span.Ncols()+1);
+    // giwc_span_cdd->representation = dd_Generator;
+
+    std::vector<coordT> pointsIn((giwc_span.Nrows()+1)*6);
+    pointsIn[0] = 0;
+    pointsIn[1] = 0;
+    pointsIn[2] = 0;
+    pointsIn[3] = 0;
+    pointsIn[4] = 0;
+    pointsIn[5] = 0;
 
     // TODO: Is there a better way than doing this?
     for (int r = 0; r < giwc_span.Nrows(); r++) {
         // First element of each row indicates whether it's a point or ray. These are all rays, indicated by 0.
         // dd_set_si(giwc_span_cdd->matrix[r][0], 0);
-        dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
+        // dd_set_si(giwc_span_cdd->matrix[r][0], 0.000001);
         for (int c = 0; c < giwc_span.Ncols(); c++) {
             // It's legal to multiply an entire row by the same value (here 1e4)
             // This rounds everything down to a fixed precision int
-            dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
+            // dd_set_si(giwc_span_cdd->matrix[r][c+1], (long) (giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
             // dd_set_si(giwc_span_cdd->matrix[r][c+1], round(giwc_span(r+1, c+1) * CONE_COMPUTATION_PRECISION));
+            pointsIn[(r+1)*6 + c] = 0.0001 * round(giwc_span(r+1, c+1) * 10000);
         }
     }
 
-    dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
-    if (err != dd_NoError) {
-        RAVELOG_INFO("CDD Error: ");
-        dd_WriteErrorMessages(stdout, err);
-        throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
-    }
+    int numPointsIn = giwc_span.Nrows()+1;
+    std::vector< std::vector<double> > facet_coefficients;
+    convexHull6D(&pointsIn[0], numPointsIn, facet_coefficients);
 
-    dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
+    // dd_PolyhedraPtr poly = dd_DDMatrix2Poly2(giwc_span_cdd, dd_MaxCutoff, &err);
+    // if (err != dd_NoError) {
+    //     RAVELOG_INFO("CDD Error: ");
+    //     dd_WriteErrorMessages(stdout, err);
+    //     throw OPENRAVE_EXCEPTION_FORMAT("CDD Error: %d", err, ORE_InvalidState);
+    // }
 
-    giwc.ReSize(giwc_face_cdd->rowsize, 6);
+    // dd_MatrixPtr giwc_face_cdd = dd_CopyInequalities(poly);
 
-    for (int row = 1; row <= giwc_face_cdd->rowsize; row++) {
+    // _giwc.ReSize(giwc_face_cdd->rowsize, 6);
+
+    // for (int row = 1; row <= giwc_face_cdd->rowsize; row++) {
+    //     // Note this skips element 0 of each row, which should always be 0
+    //     for (int col = 2; col <= giwc_face_cdd->colsize; col++) {
+    //         _giwc(row, col-1) = dd_get_d(giwc_face_cdd->matrix[row-1][col-1]);
+    //     }
+    // }
+
+    _giwc.ReSize(facet_coefficients.size(), 6);
+
+    for (int row = 0; row < facet_coefficients.size(); row++) {
         // Note this skips element 0 of each row, which should always be 0
-        for (int col = 2; col <= giwc_face_cdd->colsize; col++) {
-            giwc(row, col-1) = dd_get_d(giwc_face_cdd->matrix[row-1][col-1]);
+        for (int col = 1; col < 7; col++) {
+            _giwc(row+1, col) = -facet_coefficients[row][col];
         }
     }
 
     giwc_span.ReleaseAndDelete();
-    dd_FreeMatrix(giwc_face_cdd);
-    dd_FreePolyhedra(poly);
-    dd_FreeMatrix(giwc_span_cdd);
+    // dd_FreeMatrix(giwc_face_cdd);
+    // dd_FreePolyhedra(poly);
+    // dd_FreeMatrix(giwc_span_cdd);
     dd_free_global_constants();
 
 }
@@ -369,6 +418,107 @@ int Balance::convexHull2D(coordT* pointsIn, int numPointsIn, coordT** pointsOut,
     return exitcode;
 }
 
+int Balance::convexHull6D(coordT* pointsIn, int numPointsIn, std::vector< std::vector<double> >& facet_coefficients) {
+
+    char flags[250];
+    int exitcode;
+    facetT *facet, *newFacet;
+    int curlong, totlong;
+    facet_coefficients.clear();
+
+    float min_value = 0.000001;
+
+    sprintf (flags, "qhull QJ Pp s Tc ");
+
+    // cout<<"input points."<<endl;
+    // for(int i = 0; i < numPointsIn; i++)
+    // {
+    //     cout<<pointsIn[i*6+0]<<" "<<pointsIn[i*6+1]<<" "<<pointsIn[i*6+2]<<" "<<pointsIn[i*6+3]<<" "<<pointsIn[i*6+4]<<" "<<pointsIn[i*6+5]<<endl;
+    // }
+
+    exitcode= qh_new_qhull (6, numPointsIn, pointsIn, false, flags, NULL, stderr);
+
+    FORALLfacets {
+        facet->seen = 0;
+    }
+
+    facet = qh facet_list;
+    int facet_numbers = qh num_facets;
+
+    set<string> facet_hash_set;
+    stringstream coeff_string;
+    int rounded_coeff;
+
+    // cout<<"facet parameters"<<endl;
+
+    for(int i = 0; i < facet_numbers; i++)
+    {
+        // get the facet equations.
+        coordT* normal = facet->normal;
+        coordT offset = facet->offset;
+        
+        string hash = "";
+
+        if(fabs(offset) < 0.0001)
+        {
+            std::vector<double> coeff(7);
+            if(fabs(offset) < min_value)
+            {
+                coeff[0] = 0;
+            }
+            else
+            {
+                coeff[0] = offset;
+            }
+            rounded_coeff = round(coeff[0]*1000);
+            if(rounded_coeff == 0) rounded_coeff = 0; // eliminate negative 0
+            coeff_string << rounded_coeff;
+            hash = hash + coeff_string.str();
+            coeff_string.str(std::string());
+            coeff_string.clear();
+
+            for(int i = 0; i < 6; i++)
+            {
+                if(fabs(normal[i]) < min_value)
+                {
+                    coeff[i+1] = 0;
+                }
+                else
+                {
+                    coeff[i+1] = normal[i];
+                }
+                rounded_coeff = round(coeff[i+1]*1000);
+                if(rounded_coeff == 0) rounded_coeff = 0; // eliminate negative 0
+                coeff_string << rounded_coeff;
+                hash = hash + "," + coeff_string.str();
+                coeff_string.str(std::string());
+                coeff_string.clear();
+            }
+
+            if(facet_hash_set.find(hash) == facet_hash_set.end())
+            {
+                facet_coefficients.push_back(coeff);
+                facet_hash_set.insert(hash);
+                // cout<<hash<<endl;
+                // cout<<coeff[0]<<" "<<coeff[1]<<" "<<coeff[2]<<" "<<coeff[3]<<" "<<coeff[4]<<" "<<coeff[5]<<" "<<coeff[6]<<endl;
+            }
+
+        }
+        if(i != facet_numbers-1)
+        {
+            newFacet = (facetT*)facet->next;
+            facet = newFacet;
+        }
+
+    }
+
+    qh_freeqhull(!qh_ALL);
+    qh_memfreeshort (&curlong, &totlong);
+
+    return exitcode;
+}
+
+
 Balance::Point2D Balance::compute2DPolygonCentroid(const Balance::Point2D* vertices, int vertexCount)
 {
     Point2D centroid = {0, 0};
@@ -412,19 +562,19 @@ Balance::Point2D Balance::compute2DPolygonCentroid(const Balance::Point2D* verti
 
 void Balance::GetSupportPolygon()
 {
-    RAVELOG_INFO("GetSupportPolygon");
-    int numsupportlinks = supportlinks.size();
+    // RAVELOG_INFO("GetSupportPolygon");
+    int numsupportlinks = _supportlinks.size();
 
     std::vector<boost::shared_ptr<KinBody::Link::Geometry> >_listGeomProperties;
     std::vector<Vector> points;
     AABB bounds;
     //get points on trimeshes of support links
-    vector<KinBody::LinkPtr> vlinks = Robot->GetLinks();
+    vector<KinBody::LinkPtr> vlinks = _Robot->GetLinks();
     for(int i = 0 ; i < numsupportlinks; i++)
     {
         for(int j =0; j < vlinks.size(); j++)
         {
-            if(strcmp(supportlinks[i].c_str(), vlinks[j]->GetName().c_str()) == 0 )
+            if(strcmp(_supportlinks[i].c_str(), vlinks[j]->GetName().c_str()) == 0 )
             {
                 RAVELOG_DEBUG("Found match!\n");
                 _listGeomProperties = vlinks[j]->GetGeometries();
@@ -451,7 +601,7 @@ void Balance::GetSupportPolygon()
             }
         }
     }
-    RAVELOG_INFO("Num support points in to qhull: %d\n",points.size());
+    // RAVELOG_INFO("Num support points in to qhull: %d\n",points.size());
     std::vector<coordT> pointsin(points.size()*2);
     std::vector<RaveVector<float> > plotvecs(points.size());
     for(int i = 0; i < points.size();i++)
@@ -466,21 +616,21 @@ void Balance::GetSupportPolygon()
     int numPointsOut = 0;
 
     convexHull2D(&pointsin[0], points.size(), &pointsOut, &numPointsOut);
-    RAVELOG_INFO("Num support points out of qhull:: %d\n",numPointsOut);
+    // RAVELOG_INFO("Num support points out of qhull:: %d\n",numPointsOut);
     
     std::vector<RaveVector<float> > tempvecs(numPointsOut +1);
-    supportpolyx.resize(numPointsOut);
-    supportpolyy.resize(numPointsOut);
+    _supportpolyx.resize(numPointsOut);
+    _supportpolyy.resize(numPointsOut);
 
     Point2D polygon[numPointsOut];
     dReal centerx = 0;
     dReal centery = 0;
     for(int i =0; i < numPointsOut; i++)
     {
-        supportpolyx[i] = pointsOut[(i)*2 + 0];
-        supportpolyy[i] = pointsOut[(i)*2 + 1];
-        polygon[i].x = supportpolyx[i];
-        polygon[i].y = supportpolyy[i];
+        _supportpolyx[i] = pointsOut[(i)*2 + 0];
+        _supportpolyy[i] = pointsOut[(i)*2 + 1];
+        polygon[i].x = _supportpolyx[i];
+        polygon[i].y = _supportpolyy[i];
         //centerx += supportpolyx[i];
         //centery += supportpolyy[i];
     }
@@ -496,14 +646,14 @@ void Balance::GetSupportPolygon()
 
     for(int i =0; i < numPointsOut; i++)
     {
-        supportpolyx[i] = polyscale.x*(supportpolyx[i] - centerx) + centerx + polytrans.x;
-        supportpolyy[i] = polyscale.y*(supportpolyy[i] - centery) + centery + polytrans.y;
-        tempvecs[i] = RaveVector<float>(supportpolyx[i],supportpolyy[i],0);
+        _supportpolyx[i] = _polyscale.x*(_supportpolyx[i] - centerx) + centerx + _polytrans.x;
+        _supportpolyy[i] = _polyscale.y*(_supportpolyy[i] - centery) + centery + _polytrans.y;
+        tempvecs[i] = RaveVector<float>(_supportpolyx[i],_supportpolyy[i],0);
     }
 
 
     //close the polygon
-    tempvecs[tempvecs.size()-1] = RaveVector<float>(supportpolyx[0],supportpolyy[0],0);
+    tempvecs[tempvecs.size()-1] = RaveVector<float>(_supportpolyx[0],_supportpolyy[0],0);
     // GraphHandlePtr graphptr = GetEnv()->drawlinestrip(&tempvecs[0].x,tempvecs.size(),sizeof(tempvecs[0]),5, RaveVector<float>(0, 1, 1, 1));
     // graphptrs.push_back(graphptr);
 
@@ -513,93 +663,70 @@ void Balance::GetSupportPolygon()
 
 void Balance::RefreshBalanceParameters(std::vector<dReal> q_new)
 {
-    Robot->SetActiveDOFValues(q_new);
+    _Robot->SetActiveDOFValues(q_new);
     
-    if(balance_mode == BALANCE_SUPPORT_POLYGON)
+    if(_balance_mode == BALANCE_SUPPORT_POLYGON)
     {
         GetSupportPolygon();
     }
-    else if(balance_mode == BALANCE_GIWC)
+    else if(_balance_mode == BALANCE_GIWC)
     {
         GetGIWC();
     }
 
 }
 
-void Balance::RefreshBalanceParameters(std::vector<dReal> q_new, std::vector<string> s_links_manips)
+void Balance::RefreshBalanceParameters(std::vector<dReal> q_new, std::vector<string> s_links_manips, std::map<string,NEWMAT::Matrix>& giwc_database)
 {
 
-    Robot->SetActiveDOFValues(q_new);
+    _Robot->SetActiveDOFValues(q_new);
 
-    if(balance_mode == BALANCE_SUPPORT_POLYGON)
+    if(_balance_mode == BALANCE_SUPPORT_POLYGON)
     {
-        supportlinks = s_links_manips;
+        _supportlinks = s_links_manips;
         GetSupportPolygon();
     }
-    else if(balance_mode == BALANCE_GIWC)
+    else if(_balance_mode == BALANCE_GIWC)
     {
-        bool same_support_manips = true;
-        if(support_manips.size() == s_links_manips.size())
+        string pose_code;
+        stringstream p;
+
+        for(int i = 0; i < _support_manips.size(); i++)
         {
-            for(int i = 0; i < support_manips.size(); i++)
-            {
-                if(strcmp(support_manips[i].c_str(), s_links_manips[i].c_str()) != 0)
-                {
-                    same_support_manips = false;
-                    break;
-                }
-            }
+            string manip_name = _support_manips[i];
+
+            p << manip_name << ",";
+
+            Transform manip_transform = _Robot->GetManipulator(manip_name)->GetTransform();
+
+            p << int(round(manip_transform.trans.x*100)) << "," << int(round(manip_transform.trans.y*100)) << "," << int(round(manip_transform.trans.z*100)) << ",";
+
+            p << int(round(manip_transform.rot.x*100)) << "," << int(round(manip_transform.rot.y*100)) << "," << int(round(manip_transform.rot.z*100)) << "," << int(round(manip_transform.rot.w*100));
+        }
+
+        pose_code = p.str();
+
+        if(giwc_database.count(pose_code) == 0)
+        {
+            GetGIWC();
+            giwc_database.insert(std::pair<string,NEWMAT::Matrix>(pose_code,_giwc));
         }
         else
         {
-            same_support_manips = false;
+            _giwc = giwc_database.find(pose_code)->second;
         }
 
-        if(!same_support_manips)
-        {
-            support_manips = s_links_manips;
-            dReal mu = support_mus[0];
-            support_mus.resize(support_manips.size(),mu);
-
-            string pose_code;
-            stringstream p;
-
-            for(int i = 0; i < support_manips.size(); i++)
-            {
-                string manip_name = support_manips[i];
-
-                p << manip_name << ",";
-
-                Transform manip_transform = Robot->GetManipulator(manip_name)->GetTransform();
-
-                p << int(round(manip_transform.trans.x*100)) << "," << int(round(manip_transform.trans.y*100)) << "," << int(round(manip_transform.trans.z*100)) << ",";
-
-                p << int(round(manip_transform.rot.x*100)) << "," << int(round(manip_transform.rot.y*100)) << "," << int(round(manip_transform.rot.z*100)) << "," << int(round(manip_transform.rot.w*100));
-
-                pose_code = p.str();
-            }
-
-            if(giwc_database.count(pose_code) == 0)
-            {
-                GetGIWC();
-                giwc_database.insert(std::pair<string,NEWMAT::Matrix>(pose_code,giwc));
-            }
-            else
-            {
-                giwc = giwc_database.find(pose_code)->second;                
-            }
-        }
     }
 
 }
 
 void Balance::InitializeBalanceParameters()
 {
-    if(balance_mode == BALANCE_SUPPORT_POLYGON)
+    if(_balance_mode == BALANCE_SUPPORT_POLYGON)
     {
         GetSupportPolygon();
     }
-    else if(balance_mode == BALANCE_GIWC)
+    else if(_balance_mode == BALANCE_GIWC)
     {
         GetGIWC();
     }
@@ -608,16 +735,16 @@ void Balance::InitializeBalanceParameters()
 bool Balance::CheckSupport(Vector center)
 {
     bool balanced = false;
-    if (balance_mode == BALANCE_SUPPORT_POLYGON) {
-        int nvert = supportpolyx.size();
+    if (_balance_mode == BALANCE_SUPPORT_POLYGON) {
+        int nvert = _supportpolyx.size();
         if(nvert == 0)
             return false;
 
 
         dReal testx = center.x;
         dReal testy = center.y;
-        dReal * vertx = &supportpolyx[0];
-        dReal * verty = &supportpolyy[0];
+        dReal * vertx = &_supportpolyx[0];
+        dReal * verty = &_supportpolyy[0];
 
 
         int i, j;
@@ -628,14 +755,14 @@ bool Balance::CheckSupport(Vector center)
         }
 
         center.z = 0;
-    } else if (balance_mode == BALANCE_GIWC) {
-        Vector crossprod = center.cross(gravity);
+    } else if (_balance_mode == BALANCE_GIWC) {
+        Vector crossprod = center.cross(_gravity);
 
         NEWMAT::ColumnVector giwc_test_vector(6);
-        giwc_test_vector << gravity.x << gravity.y << gravity.z
+        giwc_test_vector << _gravity.x << _gravity.y << _gravity.z
                          << crossprod.x << crossprod.y << crossprod.z;
 
-        NEWMAT::ColumnVector result = giwc * giwc_test_vector;
+        NEWMAT::ColumnVector result = _giwc * giwc_test_vector;
 
         balanced = true;
         // Test to see if any item in the result is less than 0

@@ -1,4 +1,0 @@
-__author__ = 'yu-chi'
-
-from ElasticStrips import CBiRRT, PlannerState
-import TransformMatrix

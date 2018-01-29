@@ -1,5 +1,8 @@
 cmake_minimum_required (VERSION 2.6.0)
 project(elastic_strips)
+
+set(CMAKE_CXX_FLAGS "-std=c++0x -O3 -fopenmp ${CMAKE_CXX_FLAGS}")
+
 find_package(OpenRAVE 0.9 REQUIRED)
 
 if (DEFINED CATKIN_TOPLEVEL OR (NOT ("$ENV{ROS_DISTRO}" STREQUAL "fuerte")))

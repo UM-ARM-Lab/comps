@@ -49,6 +49,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <memory>
 
 #include <sys/stat.h> //for chmod
 

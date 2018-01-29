@@ -63,8 +63,6 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
 
     RAVELOG_INFO("Initializing GeneralIK Solver\n");
 
-    
-
     _oldnumdofs = -1;
     _numdofs = -1;
     _oldnumtargdims = -1;
@@ -74,12 +72,12 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     _E_rpy.ReSize(3,3);
     _E_rpy_inv.ReSize(3,3);
 
-    balancedx.ReSize(2);
-    Mbal.ReSize(2);
-    Mbalinv.ReSize(2);
+    balancedx.ReSize(3);
+    Mbal.ReSize(3);
+    Mbalinv.ReSize(3);
 
-    Mbalperp.ReSize(2);
-    Mbalperpinv.ReSize(2);
+    Mbalperp.ReSize(3);
+    Mbalperpinv.ReSize(3);
 
     curquat.ReSize(4);
     angveltoquat.ReSize(4,4);
@@ -117,7 +115,7 @@ void GeneralIK::ResizeMatrices()
     _Jr_proper.ReSize(3,_numdofs);
     q_limits.ReSize(_numdofs);
 
-    Jtemp2.ReSize(2,_numdofs);
+    Jtemp2.ReSize(3,_numdofs);
     Jtemp3.ReSize(3,_numdofs);
 
     _Jr_quat.ReSize(4,_numdofs);
@@ -146,29 +144,44 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     std::vector<dReal> q_s(numdofs);
 
     for(int i = 0; i < numdofs; i++)
+    {
         q_s[i] = q0[i];
+    }
 
     //set joint velocity weight (the lower the faster)
-    W.ReSize(numdofs);
-    Winv.ReSize(numdofs);
-    W = 1.0;
-    Winv = 1.0;
+    // W.ReSize(numdofs);
+    // Winv.ReSize(numdofs);
+    // W = 1.0;
+    // Winv = 1.0;
     // for(int i = 0; i < numdofs; i++)
     // {
     //     int DOF_index = _pRobot->GetActiveDOFIndices()[i];
     //     string DOF_name = _pRobot->GetJoints()[DOF_index]->GetName();
 
-    //     if(DOF_name == "l_knee_pitch" || DOF_name == "l_ankle_pitch" || DOF_name == "l_hip_pitch")
+    //     // if(DOF_name == "l_knee_pitch" || DOF_name == "l_ankle_pitch" || DOF_name == "l_hip_pitch")
+    //     // {
+    //     //     W(i+1) = 0.1;
+    //     // }
+    //     // else if(DOF_name == "r_knee_pitch" || DOF_name == "r_ankle_pitch" || DOF_name == "r_hip_pitch")
+    //     // {
+    //     //     W(i+1) = 0.1;
+    //     // }
+    //     // else
+    //     // {
+    //     //     W(i+1) = 10.0;
+    //     // }
+
+    //     if(DOF_name == "l_shoulder_pitch" || DOF_name == "l_shoulder_roll" || DOF_name == "l_shoulder_yaw" || DOF_name == "l_elbow_pitch" || DOF_name == "l_elbow_roll" || DOF_name == "l_wrist_pitch" || DOF_name == "l_wrist_yaw")
     //     {
-    //         W(i+1) = 0.1;
+    //         W(i+1) = 100.0;
     //     }
-    //     else if(DOF_name == "r_knee_pitch" || DOF_name == "r_ankle_pitch" || DOF_name == "r_hip_pitch")
+    //     else if(DOF_name == "r_shoulder_pitch" || DOF_name == "r_shoulder_roll" || DOF_name == "r_shoulder_yaw" || DOF_name == "r_elbow_pitch" || DOF_name == "r_elbow_roll" || DOF_name == "r_wrist_pitch" || DOF_name == "r_wrist_yaw")
     //     {
-    //         W(i+1) = 0.1;
+    //         W(i+1) = 100.0;
     //     }
     //     else
     //     {
-    //         W(i+1) = 10.0;
+    //         W(i+1) = 0.001;
     //     }
 
     //     // if(DOF_name == "waist_yaw")
@@ -183,19 +196,19 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     //     Winv(i+1) = 1 / W(i+1);
     // }
 
-    for(int i = 0; i < _numdofs; i++)
-    {
-        if(fabs(q_s[i] - _lowerLimit[i]) < 0.0001 || fabs(q_s[i] - _upperLimit[i]) < 0.0001)
-        {
-            W(i+1) = 0.25 * (_upperLimit[i]-_lowerLimit[i]) / 0.0001;
-        }
-        else
-        {
-            W(i+1) = 0.25 * pow((_upperLimit[i]-_lowerLimit[i]),2) / ((q_s[i] - _lowerLimit[i]) * (_upperLimit[i]-q_s[i]));
-        }
+    // for(int i = 0; i < _numdofs; i++)
+    // {
+    //     if(fabs(q_s[i] - _lowerLimit[i]) < 0.0001 || fabs(q_s[i] - _upperLimit[i]) < 0.0001)
+    //     {
+    //         W(i+1) = 0.25 * (_upperLimit[i]-_lowerLimit[i]) / 0.0001;
+    //     }
+    //     else
+    //     {
+    //         W(i+1) = 0.25 * pow((_upperLimit[i]-_lowerLimit[i]),2) / ((q_s[i] - _lowerLimit[i]) * (_upperLimit[i]-q_s[i]));
+    //     }
 
-        Winv(i+1) = 1 / W(i+1);
-    }
+    //     Winv(i+1) = 1 / W(i+1);
+    // }
 
     //read in the ik targets
 
@@ -299,7 +312,8 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
 
         balance_mode = BALANCE_SUPPORT_POLYGON;
     }
-    else if (support_mode == 2) {
+    else if(support_mode == 2)
+    {
         if (bPRINT)
             RAVELOG_INFO("Support mode: Gravito-Inertial Wrench Cone\n");
 
@@ -328,37 +342,75 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         balance_mode = BALANCE_NONE;
     }
 
-//    //! TEST
-//    bPRINT = false; bDRAW = false;
-//    std::vector<float> green;
-//    std::vector<float> red;
-//    for (dReal x = -1; x < 1; x += 0.05) {
-//        for (dReal y = -1; y < 1; y += 0.05) {
-//            for (dReal z = 0; z < 2; z += 0.05) {
-//                Vector center(x, y, z, 1);
-//                if (CheckSupport(center)) {
-//                    green.push_back(x);
-//                    green.push_back(y);
-//                    green.push_back(z);
-//                } else {
-////                    red.push_back(x);
-////                    red.push_back(y);
-////                    red.push_back(z);
-//                }
-//                if (green.size() > 0)
-//                    graphptrs.push_back(GetEnv()->plot3(&green.front(), green.size()/3, 3, 5, Vector(0, 1, 0, 1)));
-//                green.clear();
-//                if (red.size() > 0)
-//                    graphptrs.push_back(GetEnv()->plot3(&red.front(), red.size()/3, 3, 5, Vector(1, 0, 0, 1)));
-//                red.clear();
-//            }
-//        }
-//    }
-//    bPRINT = true; bDRAW = true;
+
+    // if(support_mode == 2)
+    // {
+    //     // std::vector<float> green;
+    //     _pRobot->SetActiveDOFValues(q_s);
+    //     Vector robot_center_transform = 0.5 * (_pRobot->GetLink("l_foot")->GetTransform().trans + _pRobot->GetLink("r_foot")->GetTransform().trans);
+    //     robot_center_transform.z = robot_center_transform.z + 0.9;
+
+    //     float sampling_range_xy = 0.3;
+    //     float sampling_range_z = 0.2;
+
+    //     Vector tmp_cogtarg(0,0,0);
+    //     int feasible_cog_count = 0;
+
+    //     // cout<<cogtarg<<endl;
+
+    //     for(dReal xi = cogtarg.x - sampling_range_xy; xi <= cogtarg.x + sampling_range_xy; xi = xi + 0.02)
+    //     {
+    //         for(dReal yi = cogtarg.y - sampling_range_xy; yi <= cogtarg.y + sampling_range_xy; yi = yi + 0.02)
+    //         {
+    //             for(dReal zi = robot_center_transform.z - sampling_range_z; zi <= robot_center_transform.z + sampling_range_z; zi = zi + 0.02)
+    //             {
+    //                 // cout<<Vector(xi,yi,zi);
+    //                 if(CheckSupport(Vector(xi,yi,zi)))
+    //                 {
+    //                     tmp_cogtarg.x += xi;
+    //                     tmp_cogtarg.y += yi;
+    //                     tmp_cogtarg.z += zi;
+    //                     feasible_cog_count += 1;
+    //                     // green.push_back(xi);
+    //                     // green.push_back(yi);
+    //                     // green.push_back(zi);
+    //                 }
+
+    //                 // if (green.size() > 0)
+    //                 //     graphptrs.push_back(GetEnv()->plot3(&green.front(), green.size()/3, 3, 5, Vector(0, 1, 0, 1)));
+    //                 // green.clear();
+
+    //             }
+    //         }
+    //     }
+
+    //     if(feasible_cog_count != 0)
+    //     {
+    //         tmp_cogtarg.x /= feasible_cog_count;
+    //         tmp_cogtarg.y /= feasible_cog_count;
+    //         tmp_cogtarg.z /= feasible_cog_count;
+    //         cogtarg = tmp_cogtarg;
+    //     }
+    //     // cout<<cogtarg<<endl;
+
+    //     // getchar();
+    //     // graphptrs.clear();
+        
+    // }
+
 
     //this used to be a mode but is currently ignored
     int junk = (int)pFreeParameters[offset++]; //mode = (GeneralIK::Mode)pFreeParameters[offset++];
     bTRANSLATION_ONLY = (bool)pFreeParameters[offset++];
+    bEXACT_COG = (bool)pFreeParameters[offset++];
+
+
+    if(bEXACT_COG)
+    {
+        cogtarg.x = pFreeParameters[offset++];
+        cogtarg.y = pFreeParameters[offset++];
+        cogtarg.z = pFreeParameters[offset++];
+    }
     
     if(vFreeParameters.size()-1 == offset)
     {
@@ -498,7 +550,7 @@ dReal GeneralIK::TransformDifference(dReal * dx,Transform tm_ref, Transform tm_t
     for(int i = 0; i < _dimspergoal; i++)
         _sumsqr += dx[i]*dx[i];
 
-    //RAVELOG_INFO("dx: %f %f %f %f %f %F\n",dx[0],dx[1],dx[2],dx[3],dx[4],dx[5]);
+    // RAVELOG_INFO("dx: %f %f %f %f %f %F\n",dx[0],dx[1],dx[2],dx[3],dx[4],dx[5]);
 
     return sqrt(_sumsqr);
 }
@@ -636,7 +688,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
         //PrintMatrix(_Jp.Store(),3,_numdofs,"Jp: ");
         //PrintMatrix(_Jr.Store(),3,_numdofs,"Jr: ");
 
-        J = J + ((*itlink)->GetMass()*(_Jp.Rows(1,2)));
+        J = J + ((*itlink)->GetMass()*(_Jp.Rows(1,3)));
 
 
         center += ((*itlink)->GetTransform() * (*itlink)->GetCOMOffset() * (*itlink)->GetMass());
@@ -645,7 +697,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
 
     if( fTotalMass > 0 )
         center /= fTotalMass;
-    //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
+    // RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
    
     J = J/fTotalMass;
 
@@ -787,12 +839,13 @@ bool GeneralIK::CheckSupport(Vector center)
 
         center.z = 0;
     } else if (balance_mode == BALANCE_GIWC) {
+
         Vector crossprod = center.cross(gravity);
 
         NEWMAT::ColumnVector giwc_test_vector(6);
         giwc_test_vector << gravity.x << gravity.y << gravity.z
                          << crossprod.x << crossprod.y << crossprod.z;
-
+        
         NEWMAT::ColumnVector result = giwc * giwc_test_vector;
 
         balanced = true;
@@ -814,9 +867,10 @@ bool GeneralIK::CheckSupport(Vector center)
 
         if(bDRAW)
             graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(cogtarg)[0]), 1, 0, 10, Vector(0, 0, 1) ));
+
     }
     solutionpath.push_back(center);
-    //RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
+    // RAVELOG_INFO("cog: %f %f %f\n", center.x,center.y,center.z);
     if(balanced)
     {
         if (bPRINT)
@@ -827,7 +881,7 @@ bool GeneralIK::CheckSupport(Vector center)
     }
     else
     {
-        if (bPRINT)
+        if(bPRINT)
             RAVELOG_INFO("Balance check: Not balanced \n");
         if(bDRAW)
             graphptrs.push_back(GetEnv()->plot3(&(DoubleVectorToFloatVector(center)[0]), 1, 0, 10, Vector(1,0,0) ));
@@ -916,9 +970,9 @@ void GeneralIK::DrawSolutionPath()
         fSolutionPath.push_back(RaveVector<float>(solutionpath[i].x,solutionpath[i].y,solutionpath[i].z));
 
     RaveVector<float> vblue = RaveVector<float>(0, 0, 1, 0);
-    graphptrs.push_back(GetEnv()->drawlinestrip(&(fSolutionPath[0].x),pathlength,sizeof(vblue),3, vblue));
+    // graphptrs.push_back(GetEnv()->drawlinestrip(&(fSolutionPath[0].x),pathlength,sizeof(vblue),3, vblue));
 
-    graphptrs.push_back(GetEnv()->plot3( &(DoubleVectorToFloatVector(solutionpath[pathlength-1])[0]), 1, 0, 15, Vector(1,1,0) ));
+    // graphptrs.push_back(GetEnv()->plot3( &(DoubleVectorToFloatVector(solutionpath[pathlength-1])[0]), 1, 0, 15, Vector(1,1,0) ));
     RAVELOG_INFO("cog at end: %f %f %f\n",solutionpath[pathlength-1].x,solutionpath[pathlength-1].y,solutionpath[pathlength-1].z);
 }
 
@@ -1096,8 +1150,9 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
     bBalanceGradient = false;
     Vector perpvec;
+    bool balanced;
 
-    for(int kk = 0; kk < 300; kk++)
+    for(int kk = 0; kk < 200; kk++)
     {
         _numitr++;
 
@@ -1184,20 +1239,26 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
         {
             badjointinds.resize(0);
         }
+
         do{
             q_s_old = q_s;
 
             if(bLimit == false)
                 prev_error = x_error;
 
-            if(balance_mode != BALANCE_NONE)
+
+            if(balance_mode != BALANCE_NONE || bEXACT_COG)
             {
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
 
+            balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog)));
+            // balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog) && sqrt((curcog-cogtarg).lengthsqr2()) <= 0.2 && fabs(curcog.z-cogtarg.z) <= 0.1));
+            // balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog) && sqrt((curcog-cogtarg).lengthsqr2()) <= 0.2));
 
             //RAVELOG_INFO("xerror: %f\n",x_error);
-            if(x_error < epsilon && (balance_mode == BALANCE_NONE || CheckSupport(curcog)) && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
+            // if(x_error < epsilon && balanced && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0)))
+            if(x_error < epsilon && balanced && (bEXACT_COG == false || sqrt((curcog-cogtarg).lengthsqr2()) <= 0.05) && (bOBSTACLE_AVOIDANCE == false || control_points_in_collision.size() == 0))
             {
                 if(bPRINT)
                     RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
@@ -1215,35 +1276,42 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                     J.Rows(i*_dimspergoal +1,(i+1)*_dimspergoal) = Jtemp;
                 }
 
-                if(balance_mode != BALANCE_NONE)
+                if(balance_mode != BALANCE_NONE || bEXACT_COG)
                 {
-                   //the cog jacobian should only be 2 dimensional, b/c we don't care about z
                    GetCOGJacobian(Transform(),Jtemp2,curcog);
 
-                   if(!CheckSupport(curcog))
+                   if(!balanced || (bEXACT_COG && sqrt((curcog-cogtarg).lengthsqr2()) > 0.05))
                    {
                         bBalanceGradient = true;
                         balancedx(1) = (curcog.x - cogtarg.x);
                         balancedx(2) = (curcog.y - cogtarg.y);
+                        // balancedx(3) = (curcog.z - cogtarg.z);
+                        balancedx(3) = 0;
                    }
                    else
                    {
+                        bBalanceGradient = false;
                         balancedx(1) = 0;
                         balancedx(2) = 0;
-                        bBalanceGradient = false;
+                        balancedx(3) = 0;
+                        // bBalanceGradient = true;
+                        // balancedx(1) = (curcog.x - cogtarg.x);
+                        // balancedx(2) = (curcog.y - cogtarg.y);
+                        // balancedx(3) = (curcog.z - cogtarg.z);
                    }
                 }
             }
+
 
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
                 for(int k = 0; k < _numtargdims; k++)
                       J(k+1,badjointinds[j]+1) = 0;
 
-            if(balance_mode != BALANCE_NONE)
+            if(balance_mode != BALANCE_NONE || bEXACT_COG)
             {
                 for(int j = 0; j < badjointinds.size(); j++)
-                    for(int k = 0; k <2; k++)
+                    for(int k = 0; k <3; k++)
                           Jtemp2(k+1,badjointinds[j]+1) = 0;
             }
 
@@ -1270,6 +1338,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             //Add collision avoidance here
             //order: collision avoidance -> reach goal -> remain balance
+
             if(bOBSTACLE_AVOIDANCE)
             {
                 obstacleavoidancestep.ReSize(_numdofs);
@@ -1347,11 +1416,11 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 {
                     NEWMAT::Matrix Jtemp3plus = Jtemp3.t()*Moainv;
                     // nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp2plus*(1*balancedx) + (NEWMAT::IdentityMatrix(_numdofs) - Jtemp2plus*Jtemp2)*obstacleavoidancestep);
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp3plus*obstacleavoidancestep + (NEWMAT::IdentityMatrix(_numdofs) - Jtemp3plus*Jtemp3)*(1*balancedx));
+                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp3plus*obstacleavoidancestep + (NEWMAT::IdentityMatrix(_numdofs) - Jtemp3plus*Jtemp3)*(1.0*balancedx));
                 }
                 else
                 {
-                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*Jtemp2plus*(1*balancedx);
+                    nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*Jtemp2plus*(1.0*balancedx);
                 }
                 
             }
