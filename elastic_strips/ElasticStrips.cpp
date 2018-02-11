@@ -624,6 +624,15 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
 
         // contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
 
+        // if(strcmp(manip_name.c_str(),"l_leg") == 0 || strcmp(manip_name.c_str(),"r_leg") == 0)
+        // {
+        //     axis_angle = axisAngleFromQuat(contact_consistent_transform.rot);
+        //     axis_angle[2] = min(max(axis_angle[2],-20*PI/180.0),20*PI/180.0);
+        //     axis_angle[2] = 0;
+        //     contact_consistent_transform.rot = quatFromAxisAngle(axis_angle);
+        // }
+        
+
         contact_consistent_transform.trans = contact_consistent_translation;
 
         if(contact_kinbody)
@@ -631,7 +640,8 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
             contact_kinbody->SetTransform(contact_consistent_transform);
         }
 
-        // cout<<contact_kinbody_name<<": "<<contact_kinbody->GetTransform()<<endl;
+        // cout<<contact_kinbody_name<<"Type: "<<manip_name.c_str()<<", Transform: "<<contact_kinbody->GetTransform()<<endl;
+        // getchar();
 
         if(strcmp(manip_name.c_str(),"l_arm") == 0)
         {
@@ -669,13 +679,34 @@ void ElasticStrips::DecideContactConsistentTransform(TrajectoryBasePtr ptraj)
     }
 }
 
-void ElasticStrips::FindNearestContactRegion()
+int ElasticStrips::FindNearestContactRegion()
 {
     std::map< int, ContactRegion > temp_nearest_contact_regions;
     std::vector<GraphHandlePtr> handles;
     float contact_r = 0.142 * 1.5;
 
-    for(std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.begin(); cmg_it != _contact_manips_group.end(); cmg_it++)
+    Transform last_left_foot_xy_transform, last_right_foot_xy_transform;
+    Transform standing_foot_xy_transform, standing_foot_xy_transform_inverse;
+
+    bool first_foot_contact = true;
+
+    std::vector<std::pair<int,ContactManipGroup> > contact_manips_group_vec;
+    
+    int index = 0;
+    int counter = 0;
+
+    while(counter < _contact_manips_group.size())
+    {
+        if(_contact_manips_group.count(index) != 0)
+        {
+            std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.find(index);
+            contact_manips_group_vec.push_back(std::make_pair(cmg_it->first,cmg_it->second));
+            counter++;
+        }
+        index++;
+    }
+
+    for(std::vector< std::pair< int, ContactManipGroup > >::iterator cmg_it = contact_manips_group_vec.begin(); cmg_it != contact_manips_group_vec.end(); cmg_it++)
     {
         int contact_manip_group_index = cmg_it->first;
         string manip_name = cmg_it->second.manip_name;
@@ -700,21 +731,40 @@ void ElasticStrips::FindNearestContactRegion()
 
         // cout<<candidate_contact_regions.size()<<endl;
 
-        float nearest_dist = 9999.0;
+        bool is_foot_contact = false;
+        bool is_right_leg = false;
+
+        if(strcmp(manip_name.c_str(),"l_leg") == 0)
+        {
+            standing_foot_xy_transform = last_right_foot_xy_transform;
+            standing_foot_xy_transform_inverse = last_right_foot_xy_transform.inverse();
+            is_foot_contact = true;
+        }
+        else if(strcmp(manip_name.c_str(),"r_leg") == 0)
+        {
+            standing_foot_xy_transform = last_left_foot_xy_transform;
+            standing_foot_xy_transform_inverse = last_left_foot_xy_transform.inverse();
+            is_foot_contact = true;
+            is_right_leg = true;
+        }
+
+        bool found_contact_region = false;
+
+        float nearest_dist = 3.0;
         Transform final_contact_consistent_transform;
         ContactRegion nearest_contact_region;
-        bool collision_free_contact_exist = false;
 
         for(std::vector<ContactRegion>::iterator cr_it = candidate_contact_regions.begin(); cr_it != candidate_contact_regions.end(); cr_it++)
         {
             float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
 
-            if(dist < nearest_dist || !collision_free_contact_exist)
+            if(dist < nearest_dist)
             {
                 // check if it will be in collision with previous contact groups
                 Transform temp_contact_region_frame = cr_it->contact_region_frame;
+                Transform temp_contact_region_frame_inverse = temp_contact_region_frame.inverse();
 
-                Transform temp_projected_contact_consistent_transform = temp_contact_region_frame.inverse() * contact_consistent_transform;
+                Transform temp_projected_contact_consistent_transform = temp_contact_region_frame_inverse * contact_consistent_transform;
 
                 // TransformMatrix temp_projected_contact_consistent_transform_matrix(temp_projected_contact_consistent_transform);
 
@@ -737,7 +787,7 @@ void ElasticStrips::FindNearestContactRegion()
 
                 temp_projected_contact_consistent_transform.trans.z = 0.0;
 
-                float dist_to_center = sqrt(temp_projected_contact_consistent_transform.trans.lengthsqr3());
+                float dist_to_center = sqrt(temp_projected_contact_consistent_transform.trans.lengthsqr2());
 
                 if(dist_to_center > cr_it->radius)
                 {
@@ -753,89 +803,83 @@ void ElasticStrips::FindNearestContactRegion()
 
                 Transform new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
 
-                bool in_collision = false;
-
-                for(std::map< int, ContactManipGroup >::iterator cmg_it_2 = _contact_manips_group.begin(); cmg_it_2 != cmg_it; cmg_it_2++)
+                // update the distance based on the limit area
+                if(is_foot_contact && !first_foot_contact)
                 {
-                    if(cmg_it->second.avoid_contact_manip_group.count(cmg_it_2->first) != 0)
+                    Transform standing_foot_to_new_contact_consistent_transform = standing_foot_xy_transform_inverse * new_contact_consistent_transform;
+                    dReal tx = standing_foot_to_new_contact_consistent_transform.trans.x;
+                    dReal ty = standing_foot_to_new_contact_consistent_transform.trans.y;
+
+                    if(is_right_leg)
                     {
-                        // cout<<"checking collision!!"<<endl;
+                        ty = -ty;
+                    }
 
-                        bool in_collision_with_this_contact = false;
+                    bool in_left_bound = pow(tx/0.45,2) + pow((ty-0.2)/0.3,2) <= 1;
+                    bool in_right_bound = ty >= 0.2;
 
-                        Transform neighbor_contact_consistent_transform = cmg_it_2->second.contact_consistent_transform;
-
-                        Vector translation = neighbor_contact_consistent_transform.trans - new_contact_consistent_transform.trans;
-
-                        if(translation.lengthsqr3() != 0)
+                    if(in_left_bound && in_right_bound)
+                    {
+                        found_contact_region = true;
+                    }
+                    else
+                    {                        
+                        if(in_left_bound && !in_right_bound)
                         {
-                            if(translation.lengthsqr3() < contact_r*contact_r)
-                            {
-                                translation = (1/sqrt(translation.lengthsqr3())) * translation;
-
-                                if(fabs(translation.dot3(cr_it->normal)) < 0.01)
-                                {
-                                    in_collision_with_this_contact = true;
-                                }
-                            }
+                            ty = 0.2;
+                        }
+                        else if(!in_left_bound && in_right_bound)
+                        {
+                            dReal m = 1/sqrt(pow(tx/0.45,2) + pow((ty-0.2)/0.3,2));
+                            tx = m*tx;
+                            ty = 0.2 + m*(ty-0.2);
                         }
                         else
                         {
-                            in_collision_with_this_contact = true;
+                            if(tx >= 0.45)
+                            {
+                                tx = 0.45; 
+                            }
+                            else if(tx <= -0.45)
+                            {
+                                tx = -0.45;
+                            }
+                            ty = 0.2;
                         }
 
-                        if(in_collision_with_this_contact)
+                        if(is_right_leg)
                         {
-                            in_collision = true;
-                            if(cr_it->radius + sqrt((neighbor_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) > contact_r)
-                            {
-                                Transform projected_neighbor_contact_consistent_transform = temp_contact_region_frame.inverse() * neighbor_contact_consistent_transform;
+                            ty = -ty;
+                        }
 
-                                projected_neighbor_contact_consistent_transform.trans.z = 0.0;
+                        // transform the new projected distance back and see if it is inside the original contact region
+                        standing_foot_to_new_contact_consistent_transform.trans.x = tx;
+                        standing_foot_to_new_contact_consistent_transform.trans.y = ty;
+                        temp_projected_contact_consistent_transform = temp_contact_region_frame_inverse * standing_foot_xy_transform * standing_foot_to_new_contact_consistent_transform;
 
-                                Transform new_projected_contact_consistent_transform;
+                        temp_projected_contact_consistent_transform.trans.z = 0.0;
+                        dist_to_center = sqrt(temp_projected_contact_consistent_transform.trans.lengthsqr2());
 
-                                for(float ori = 0; ori < 360; ori = ori + 45)
-                                {
-                                    new_projected_contact_consistent_transform.trans.x = projected_neighbor_contact_consistent_transform.trans.x + contact_r * cos(3.1415926/180.0 * ori);
-                                    new_projected_contact_consistent_transform.trans.y = projected_neighbor_contact_consistent_transform.trans.y + contact_r * sin(3.1415926/180.0 * ori);
-                                    new_projected_contact_consistent_transform.trans.z = 0.0;
-
-                                    if(sqrt(new_projected_contact_consistent_transform.trans.lengthsqr2()) <= cr_it->radius)
-                                    {
-                                        new_projected_contact_consistent_transform.rot = temp_projected_contact_consistent_transform.rot;
-                                        Transform temp_new_contact_consistent_transform = temp_contact_region_frame * new_projected_contact_consistent_transform;
-                                        float trans_dist = sqrt((temp_new_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3());
-                                        float orient_dist = cr_it->OrientationDistToContactRegion(manip_name, contact_consistent_transform);
-                                        dist = trans_dist + 0.5 * orient_dist;
-
-                                        float trans_dist_between_neighbor_contact_consistent_transform = sqrt((neighbor_contact_consistent_transform.trans - contact_consistent_transform.trans).lengthsqr3());
-                                        
-
-                                        if(dist < nearest_dist && (trans_dist < trans_dist_between_neighbor_contact_consistent_transform))
-                                        {
-                                            nearest_dist = dist;
-                                            final_contact_consistent_transform = temp_new_contact_consistent_transform;
-                                            collision_free_contact_exist = true;
-                                        }
-
-                                    }
-                                }
-                            }
+                        if(dist_to_center <= cr_it->radius)
+                        {
+                            found_contact_region = true;
+                            new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
+                            dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform,new_contact_consistent_transform.trans);
+                        }
+                        else
+                        {
+                            dist = 9999.0;
                         }
                     }
 
                 }
-
-                if(!in_collision)
+                else
                 {
-                    nearest_dist = dist;
-                    nearest_contact_region = *cr_it;
-                    final_contact_consistent_transform = new_contact_consistent_transform;
-                    collision_free_contact_exist = true;
+                    found_contact_region = true;
                 }
 
-                if(!collision_free_contact_exist && dist < nearest_dist)
+
+                if(dist < nearest_dist)
                 {
                     nearest_dist = dist;
                     nearest_contact_region = *cr_it;
@@ -844,17 +888,43 @@ void ElasticStrips::FindNearestContactRegion()
 
             }
 
-            if(nearest_dist == 0.0 && collision_free_contact_exist)
+
+            if(nearest_dist == 0.0)
             {
                 break;
             }
         }
 
-        cmg_it->second.contact_consistent_transform = final_contact_consistent_transform;
+        if(!found_contact_region)
+        {
+            return -1;
+        }
+
+        _contact_manips_group.find(contact_manip_group_index)->second.contact_consistent_transform = final_contact_consistent_transform;
 
         Transform contact_region_frame = nearest_contact_region.contact_region_frame;
 
         temp_nearest_contact_regions.insert(std::pair<int,ContactRegion>(contact_manip_group_index,nearest_contact_region));
+
+        // get the new left or right leg xy transform
+        if(strcmp(manip_name.c_str(),"l_leg") == 0)
+        {
+            // modify the contact consisten transform to be it xy transform
+            RaveTransformMatrix<dReal> final_contact_consistent_transform_matrix = RaveTransformMatrix<dReal>(final_contact_consistent_transform);
+            dReal yaw = atan2(final_contact_consistent_transform_matrix.m[4], final_contact_consistent_transform_matrix.m[0]);
+            last_left_foot_xy_transform.trans = final_contact_consistent_transform.trans;
+            last_left_foot_xy_transform.rot = quatFromAxisAngle(Vector(0,0,yaw));
+            first_foot_contact = false;
+        }
+        else if(strcmp(manip_name.c_str(),"r_leg") == 0)
+        {
+            // modify the contact consisten transform to be it xy transform
+            RaveTransformMatrix<dReal> final_contact_consistent_transform_matrix = RaveTransformMatrix<dReal>(final_contact_consistent_transform);
+            dReal yaw = atan2(final_contact_consistent_transform_matrix.m[4], final_contact_consistent_transform_matrix.m[0]);
+            last_right_foot_xy_transform.trans = final_contact_consistent_transform.trans;
+            last_right_foot_xy_transform.rot = quatFromAxisAngle(Vector(0,0,yaw));
+            first_foot_contact = false;
+        }
 
 
         // TransformMatrix contact_region_frame_matrix = TransformMatrix(contact_region_frame);
@@ -899,6 +969,7 @@ void ElasticStrips::FindNearestContactRegion()
 
 
     _nearest_contact_regions = temp_nearest_contact_regions;
+    return 1;
 
 }
 
@@ -1348,7 +1419,7 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
         _Mxyinv[w].ReSize(2*manip_num_in_group);
         _dxy[w].ReSize(2*manip_num_in_group);
         _Regxy[w].ReSize(2*manip_num_in_group);
-        _Regxy[w] = 0.0001;
+        _Regxy[w] = 0.001;
 
         // Z
         _JZ[w].ReSize(1,_numdofs);
@@ -1360,7 +1431,7 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
         _Mzrpyinv[w].ReSize(4*manip_num_in_group);
         _dzrpy[w].ReSize(4*manip_num_in_group);
         _Regzrpy[w].ReSize(4*manip_num_in_group);
-        _Regzrpy[w] = 0.0001;
+        _Regzrpy[w] = 0.001;
         
         _JXYZRPY[w].ReSize(6*manip_num_in_group,_numdofs);
         _JXYZRPYplus[w].ReSize(_numdofs,6*manip_num_in_group);
@@ -1368,7 +1439,7 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
         _Mxyzrpyinv[w].ReSize(6*manip_num_in_group);
         _dxyzrpy[w].ReSize(6*manip_num_in_group);
         _Regxyzrpy[w].ReSize(6*manip_num_in_group);
-        _Regxyzrpy[w] = 0.0001;
+        _Regxyzrpy[w] = 0.001;
 
         _balance_step[w].ReSize(_numdofs);
         _balance_step[w] = 0;
@@ -1743,8 +1814,8 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         _Jp[w] = _tasktm[w] * _Jp0[w];
         _Jr[w] = _tasktm[w] * (-_Jr0[w]);
 
-        // JXY.Rows(i*2+1,i*2+2) = _Jp.Rows(1,2);
-        // JZ.Row(1) = _Jp.Row(3);
+        // _JXY[w].Rows(i*2+1,i*2+2) = _Jp[w].Rows(1,2);
+        // _JZ[w].Row(1) = _Jp[w].Row(3);
 
         //convert current rotation to euler angles (RPY) 
         QuatToRPY(contact_consistent_point_frame.inverse()*taskframe_in.inverse()*(target_manip->GetTransform()*manip_offset_transform),psi,theta,phi);
@@ -1766,8 +1837,8 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
 
         _JRPY[w] = -_Jr_proper[w];
 
-        // JZRPY.Row(i*4+1) = JZ.Row(1);
-        // JZRPY.Rows(i*4+2,i*4+4) = JRPY.Rows(1,3);
+        // _JZRPY[w].Row(i*4+1) = _JZ[w].Row(1);
+        // _JZRPY[w].Rows(i*4+2,i*4+4) = _JRPY[w].Rows(1,3);
 
         _JXYZRPY[w].Rows(i*6+1,i*6+3) = _Jp[w].Rows(1,3);
         _JXYZRPY[w].Rows(i*6+4,i*6+6) = _JRPY[w].Rows(1,3);
@@ -1779,12 +1850,12 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         TransformDifference(ds.Store(), contact_consistent_point_frame, target_manip->GetTransform()*manip_offset_transform);
 
         //velocity, can be written as force
-        // dxy(i*2+1) = ds(1);
-        // dxy(i*2+2) = ds(2);
-        // dzrpy(i*4+1) = ds(3);
-        // dzrpy(i*4+2) = ds(4);
-        // dzrpy(i*4+3) = ds(5);
-        // dzrpy(i*4+4) = ds(6);
+        // _dxy[w](i*2+1) = ds(1);
+        // _dxy[w](i*2+2) = ds(2);
+        // _dzrpy[w](i*4+1) = ds(3);
+        // _dzrpy[w](i*4+2) = ds(4);
+        // _dzrpy[w](i*4+3) = ds(5);
+        // _dzrpy[w](i*4+4) = ds(6);
 
         _dxyzrpy[w](i*6+1) = ds(1);
         _dxyzrpy[w](i*6+2) = ds(2);
@@ -1860,15 +1931,15 @@ void ElasticStrips::UpdateZRPYandXYJacobianandStep(Transform taskframe_in, size_
         // getchar();
     }
 
-    // RemoveBadJointJacobianCols(JXY,w);
-    // Mxy << JXY*JXY.t() + Regxy;
-    // invConditioningBound(10000,Mxy,Mxyinv);
-    // JXYplus = JXY.t()*Mxyinv;
+    // RemoveBadJointJacobianCols(_JXY[w],w);
+    // _Mxy[w] << _JXY[w]*_JXY[w].t() + _Regxy[w];
+    // invConditioningBound(10000,_Mxy[w],_Mxyinv[w]);
+    // _JXYplus[w] = _JXY[w].t()*_Mxyinv[w];
 
-    // RemoveBadJointJacobianCols(JZRPY,w);
-    // Mzrpy << JZRPY*JZRPY.t() + Regzrpy;
-    // invConditioningBound(10000,Mzrpy,Mzrpyinv);
-    // JZRPYplus = JZRPY.t()*Mzrpyinv;
+    // RemoveBadJointJacobianCols(_JZRPY[w],w);
+    // _Mzrpy[w] << _JZRPY[w]*_JZRPY[w].t() + _Regzrpy[w];
+    // invConditioningBound(10000,_Mzrpy[w],_Mzrpyinv[w]);
+    // _JZRPYplus[w] = _JZRPY[w].t()*_Mzrpyinv[w];
 
     RemoveBadJointJacobianCols(_JXYZRPY[w],w);
     _Mxyzrpy[w] << _JXYZRPY[w]*_JXYZRPY[w].t() + _Regxyzrpy[w];
@@ -2067,7 +2138,7 @@ void ElasticStrips::UpdateOAJacobianandStep(Transform taskframe_in, TrajectoryBa
 
         RemoveBadJointJacobianCols(_JOA[w],w);
         _Regoa[w].ReSize(_JOA[w].Nrows());
-        _Regoa[w] = 0.0001;
+        _Regoa[w] = 0.001;
         _Moa[w].ReSize(_JOA[w].Nrows());
         _Moainv[w].ReSize(_JOA[w].Nrows());
         _Moa[w] << (_JOA[w]*_JOA[w].t()) + _Regoa[w];
@@ -2297,7 +2368,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             _Mpc[w].ReSize(6*_parameters->_posture_control.size());
             _Mpcinv[w].ReSize(6*_parameters->_posture_control.size());
             _Regpc[w].ReSize(6*_parameters->_posture_control.size());
-            _Regpc[w] = 0.0001;
+            _Regpc[w] = 0.001;
             _dpc[w].ReSize(6*_parameters->_posture_control.size());
         }
 
@@ -2308,7 +2379,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             _Mcog[w].ReSize(2);
             _Mcoginv[w].ReSize(2);
             _Regcog[w].ReSize(2);
-            _Regcog[w] = 0.0001;
+            _Regcog[w] = 0.001;
             _dcog[w].ReSize(2);
             // _JCOG[w].ReSize(3,_numdofs);
             // _JCOGplus[w].ReSize(_numdofs,3);
@@ -2326,7 +2397,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         _Mintinv[w].ReSize(3*_parameters->_internal_force_links.size());
         
         _Regint[w].ReSize(3*_parameters->_internal_force_links.size());
-        _Regint[w] = 0.0001;
+        _Regint[w] = 0.001;
 
         _dint[w].ReSize(3*_parameters->_internal_force_links.size());
 
@@ -2361,11 +2432,11 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
     for(int i = 0; i < stepsize.size(); i++)
     {
-        stepsize[i] = 0.3 * _waypoint_manip_group_map.find(i)->second.size();
+        stepsize[i] = 0.1 * _waypoint_manip_group_map.find(i)->second.size();
     }
     
 
-    for(int k = 0; k < 40; k++) // modify the configuration
+    for(int k = 0; k < 20; k++) // modify the configuration
     {
         if(bPrint)
             RAVELOG_INFO("Iteration: %i\n",k);
@@ -2382,7 +2453,13 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
         // cout<<"Decide Contact Consistent Region."<<endl;
         DecideContactConsistentTransform(ftraj);
         // cout<<"Find Nearest Contact Region."<<endl;
-        FindNearestContactRegion();
+        int contact_contact_region_matching = FindNearestContactRegion();
+
+        if(contact_contact_region_matching == -1)
+        {
+            result = PS_Failed;
+            return result;
+        }
 
         once_stable_waypoint.clear();
         non_stable_waypoint.clear();
@@ -2416,7 +2493,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
             
             robot->SetActiveDOFValues(qs);
             
-            // GetEnv()->UpdatePublishedBodies();
+            GetEnv()->UpdatePublishedBodies();
             
             std::vector<dReal> qs_old = qs; // store the configuration before taking step.
             // if(_parameters->balance_mode != BALANCE_NONE)
@@ -2527,7 +2604,10 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                         // }
                     }
 
-                    // getchar();
+                    // if(k > 5)
+                    // {
+                    //     getchar();
+                    // }
                 }
                 
                 // 5. Posture Control (relative to robot base)
@@ -2652,7 +2732,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                     Mm.ReSize(JM.Nrows());
                     Mminv.ReSize(JM.Nrows());
                     Regm.ReSize(JM.Nrows());
-                    Regm = 0.0001;
+                    Regm = 0.001;
 
                     Mm << (JM*JM.t()) + Regm;
                     invConditioningBound(10000,Mm,Mminv);
@@ -2672,6 +2752,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 else
                 {
                     m_step = JMplus*dm + (NEWMAT::IdentityMatrix(_numdofs) - JMplus*JM) * _int_step[w];
+                    // m_step = JMplus*dm;
                 }
 
                 // if(strcmp(highest_priority.c_str(),"None") == 0 or strcmp(highest_priority.c_str(),"PC") == 0)
@@ -2813,6 +2894,10 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                 // xyz_error = prev_error[w];
                 // qs = qs_old;
             }
+            // else
+            // {
+            //     stepsize[w] = 0.1 * _waypoint_manip_group_map.find(w)->second.size();
+            // }
 
             prev_error[w] = total_error;
             

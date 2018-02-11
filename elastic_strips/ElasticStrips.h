@@ -27,7 +27,7 @@ class ElasticStrips : public ModuleBase
     OpenRAVE::PlannerStatus PlanPath(TrajectoryBasePtr ptraj);
     void LoadContactRegions(); // new elastic strips
     void DecideContactConsistentTransform(TrajectoryBasePtr ptraj);
-    void FindNearestContactRegion();
+    int FindNearestContactRegion();
     void FindContactRegions();
     void FindContactConsistentManipTranslation(TrajectoryBasePtr ptraj);
     Transform ForwardKinematics(std::vector<dReal> qs, RobotBasePtr robot, string manip_name);
@@ -179,7 +179,7 @@ class ElasticStrips : public ModuleBase
 
     dReal _cxy = 1.0;
     dReal _czrpy = 1.0;
-    dReal _ccog = 0.5;
+    dReal _ccog = 0.2;
     dReal _coa = 1.0;
     dReal _cpc = 1.0;
     dReal _cint = 1.0;

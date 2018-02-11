@@ -18,6 +18,7 @@ class ContactRegion
 		ContactRegion(){};
 		ContactRegion(Vector p, Vector n, float r);
 		float DistToContactRegion(string contact_manip, Transform contact_transform);
+		float DistToContactRegion(string contact_manip, Transform contact_transform, Vector project_position);
 		float TranslationDistToContactRegion(Transform contact_transform);
 		float OrientationDistToContactRegion(string contact_manip, Transform contact_transform);
 		Transform contact_region_frame;

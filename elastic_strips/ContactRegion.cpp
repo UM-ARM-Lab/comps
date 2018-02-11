@@ -90,3 +90,13 @@ float ContactRegion::DistToContactRegion(string contact_manip, Transform contact
 
 	return (translation_dist + k * orientation_dist);
 }
+
+float ContactRegion::DistToContactRegion(string contact_manip, Transform contact_transform, Vector project_position)
+{
+	float translation_dist = sqrt((contact_transform.trans-project_position).lengthsqr3());
+	float orientation_dist = OrientationDistToContactRegion(contact_manip,contact_transform);
+
+	float k = 0.5;
+
+	return (translation_dist + k * orientation_dist);
+}
