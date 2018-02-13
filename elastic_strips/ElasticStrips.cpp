@@ -756,6 +756,15 @@ int ElasticStrips::FindNearestContactRegion()
 
         for(std::vector<ContactRegion>::iterator cr_it = candidate_contact_regions.begin(); cr_it != candidate_contact_regions.end(); cr_it++)
         {
+            if(is_foot_contact && cr_it->contact_region_frame.trans.z > 0.4)
+            {
+                continue;
+            }
+            else if(!is_foot_contact && cr_it->contact_region_frame.trans.z <= 0.4)
+            {
+                continue;
+            }
+
             float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
 
             if(dist < nearest_dist)
@@ -766,24 +775,7 @@ int ElasticStrips::FindNearestContactRegion()
 
                 Transform temp_projected_contact_consistent_transform = temp_contact_region_frame_inverse * contact_consistent_transform;
 
-                // TransformMatrix temp_projected_contact_consistent_transform_matrix(temp_projected_contact_consistent_transform);
-
-                // Vector fx(temp_projected_contact_consistent_transform_matrix.m[0],temp_projected_contact_consistent_transform_matrix.m[4],temp_projected_contact_consistent_transform_matrix.m[8]);
-                // Vector fy(temp_projected_contact_consistent_transform_matrix.m[1],temp_projected_contact_consistent_transform_matrix.m[5],temp_projected_contact_consistent_transform_matrix.m[9]);
-                // Vector fz(temp_projected_contact_consistent_transform_matrix.m[2],temp_projected_contact_consistent_transform_matrix.m[6],temp_projected_contact_consistent_transform_matrix.m[10]);
-
-                // fx = fx - fx.dot(cr_it->normal) * cr_it->normal;
-                // fy = fy - fy.dot(cr_it->normal) * cr_it->normal;
-
-                // fx = (1/sqrt(fx.lengthsqr3())) * fx;
-                // fy = (1/sqrt(fy.lengthsqr3())) * fy;
-                // fz = fx.cross(fy);
-
-                // temp_projected_contact_consistent_transform_matrix.m[0] = fx.x; temp_projected_contact_consistent_transform_matrix.m[1] = fy.x; temp_projected_contact_consistent_transform_matrix.m[2] = fz.x;
-                // temp_projected_contact_consistent_transform_matrix.m[4] = fx.y; temp_projected_contact_consistent_transform_matrix.m[5] = fy.y; temp_projected_contact_consistent_transform_matrix.m[6] = fz.y;
-                // temp_projected_contact_consistent_transform_matrix.m[8] = fx.z; temp_projected_contact_consistent_transform_matrix.m[9] = fy.z; temp_projected_contact_consistent_transform_matrix.m[10] = fz.z;
-
-                // temp_projected_contact_consistent_transform = Transform(temp_projected_contact_consistent_transform_matrix);
+                
 
                 temp_projected_contact_consistent_transform.trans.z = 0.0;
 
@@ -1305,9 +1297,10 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
     }
 
     _start_contact_group_index.resize(2);
-    _start_contact_group_index[0] = 0;
-    _start_contact_group_index[1] = 1;
     _goal_contact_group_index.resize(2);
+
+    bool first_left_foot_contact = true;
+    bool first_right_foot_contact = true;
 
     for(std::map< int, ContactManipGroup >::iterator cmg_it = _contact_manips_group.begin(); cmg_it != _contact_manips_group.end(); cmg_it++)
     {
@@ -1316,10 +1309,20 @@ void ElasticStrips::InitPlan(boost::shared_ptr<ESParameters> params)
 
         if(strcmp(manip_name.c_str(),"l_leg") == 0)
         {
+            if(first_left_foot_contact)
+            {
+                _start_contact_group_index[0] = contact_manip_group_index;
+                first_left_foot_contact = false;
+            }
             _goal_contact_group_index[0] = contact_manip_group_index;
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
         {
+            if(first_right_foot_contact)
+            {
+                _start_contact_group_index[1] = contact_manip_group_index;
+                first_right_foot_contact = false;
+            }
             _goal_contact_group_index[1] = contact_manip_group_index;
         }
     }
