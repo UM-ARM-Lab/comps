@@ -690,6 +690,9 @@ int ElasticStrips::FindNearestContactRegion()
 
     bool first_foot_contact = true;
 
+    bool first_left_foot_contact = true;
+    bool first_right_foot_contact = true;
+
     std::vector<std::pair<int,ContactManipGroup> > contact_manips_group_vec;
     
     int index = 0;
@@ -748,6 +751,8 @@ int ElasticStrips::FindNearestContactRegion()
             is_right_leg = true;
         }
 
+        bool is_hand_contact = !is_foot_contact;
+
         bool found_contact_region = false;
 
         float nearest_dist = 3.0;
@@ -760,7 +765,7 @@ int ElasticStrips::FindNearestContactRegion()
             {
                 continue;
             }
-            else if(!is_foot_contact && cr_it->contact_region_frame.trans.z <= 0.4)
+            else if(is_hand_contact && cr_it->contact_region_frame.trans.z <= 0.4)
             {
                 continue;
             }
@@ -795,7 +800,7 @@ int ElasticStrips::FindNearestContactRegion()
 
                 Transform new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
 
-                // update the distance based on the limit area
+                // update the foot contact consistent pose based on the limit area
                 if(is_foot_contact && !first_foot_contact)
                 {
                     Transform standing_foot_to_new_contact_consistent_transform = standing_foot_xy_transform_inverse * new_contact_consistent_transform;
@@ -807,8 +812,9 @@ int ElasticStrips::FindNearestContactRegion()
                         ty = -ty;
                     }
 
-                    bool in_left_bound = pow(tx/0.45,2) + pow((ty-0.2)/0.3,2) <= 1;
-                    bool in_right_bound = ty >= 0.2;
+                    bool in_left_bound = (pow(tx/0.45,2) + pow((ty-0.2)/0.3,2) <= 1);
+                    bool in_right_bound = (ty >= 0.2);
+                    in_left_bound = true;
 
                     if(in_left_bound && in_right_bound)
                     {
@@ -822,7 +828,7 @@ int ElasticStrips::FindNearestContactRegion()
                         }
                         else if(!in_left_bound && in_right_bound)
                         {
-                            dReal m = 1/sqrt(pow(tx/0.45,2) + pow((ty-0.2)/0.3,2));
+                            dReal m = 1.0/sqrt(pow(tx/0.45,2) + pow((ty-0.2)/0.3,2));
                             tx = m*tx;
                             ty = 0.2 + m*(ty-0.2);
                         }
@@ -856,12 +862,71 @@ int ElasticStrips::FindNearestContactRegion()
                         {
                             found_contact_region = true;
                             new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
+                            float new_dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform,new_contact_consistent_transform.trans);
+
+                            if(new_dist < dist)
+                            {
+                                cout << "Bug!!!" << dist << " " << new_dist << endl;
+                                getchar();
+                            }
+                            dist = new_dist;
+                        }
+                        else
+                        {
+                            dist = 9999.0;
+                        }
+                    }
+                }
+                // update contact consisten pose of the hand contacts
+                else if(is_hand_contact && !first_left_foot_contact && !first_right_foot_contact)
+                {
+                    Vector feet_mean_position = 0.5 * (last_left_foot_xy_transform.trans + last_right_foot_xy_transform.trans);
+
+                    bool inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 1.0;
+                    bool inside_contact_region = sqrt((new_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) <= cr_it->radius;
+                    bool region_within_reach = sqrt((cr_it->position-feet_mean_position).lengthsqr2()) <= 1.0 + cr_it->radius;
+
+                    if(!inside_armreach_cylinder && region_within_reach)
+                    {
+                        Vector arc_vector = cr_it->normal.cross(Vector(0,0,1));
+                        Vector arc_unit_vector = arc_vector.normalize3();
+                        Vector step_vector;
+                        Vector step_unit_vector;
+
+                        float step_size = 0.01;
+                        
+                        do
+                        {
+                            step_vector = (feet_mean_position-new_contact_consistent_transform.trans).dot3(arc_unit_vector) * arc_unit_vector;
+
+                            if(sqrt(step_vector.lengthsqr2()) < 0.01)
+                            {
+                                break;
+                            }
+
+                            step_unit_vector = step_vector.normalize3();
+
+                            new_contact_consistent_transform.trans = new_contact_consistent_transform.trans + step_size * step_unit_vector;
+
+                            inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 1.0;
+
+                            inside_contact_region = sqrt((new_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) <= cr_it->radius;
+
+                        }while(!inside_armreach_cylinder && inside_contact_region);
+
+                        if(inside_armreach_cylinder)
+                        {
+                            found_contact_region = true;
                             dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform,new_contact_consistent_transform.trans);
                         }
                         else
                         {
                             dist = 9999.0;
                         }
+                    }
+                    else
+                    {
+                        found_contact_region = true;
                     }
 
                 }
@@ -906,6 +971,7 @@ int ElasticStrips::FindNearestContactRegion()
             dReal yaw = atan2(final_contact_consistent_transform_matrix.m[4], final_contact_consistent_transform_matrix.m[0]);
             last_left_foot_xy_transform.trans = final_contact_consistent_transform.trans;
             last_left_foot_xy_transform.rot = quatFromAxisAngle(Vector(0,0,yaw));
+            first_left_foot_contact = false;
             first_foot_contact = false;
         }
         else if(strcmp(manip_name.c_str(),"r_leg") == 0)
@@ -915,6 +981,7 @@ int ElasticStrips::FindNearestContactRegion()
             dReal yaw = atan2(final_contact_consistent_transform_matrix.m[4], final_contact_consistent_transform_matrix.m[0]);
             last_right_foot_xy_transform.trans = final_contact_consistent_transform.trans;
             last_right_foot_xy_transform.rot = quatFromAxisAngle(Vector(0,0,yaw));
+            first_right_foot_contact = false;
             first_foot_contact = false;
         }
 
