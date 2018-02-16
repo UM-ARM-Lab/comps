@@ -458,11 +458,28 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         // Compute cogtarg as the mean position of the support links
         if( !bCOG )
         {
+            float total_weight = 0.0;
             for(int i = 0; i < support_manips.size(); i++) {
                 Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
-                cogtarg += tf.trans;
+                if(strcmp(support_manips[i].c_str(), "l_leg") == 0 || strcmp(support_manips[i].c_str(), "r_leg") == 0)
+                {
+                    cogtarg += tf.trans;
+                    total_weight += 1.0;
+                }
+                else
+                {
+                    cogtarg += tf.trans;
+                    total_weight += 1.0;
+                }
             }
-            cogtarg /= support_manips.size();
+            // cogtarg /= support_manips.size();
+            cogtarg /= total_weight;
+
+            ikparams.push_back(0);
+        }
+        else
+        {
+            ikparams.push_back(1);
         }
         ikparams.push_back(cogtarg.x);
         ikparams.push_back(cogtarg.y);

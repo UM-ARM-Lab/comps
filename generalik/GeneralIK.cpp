@@ -321,6 +321,8 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         gravity.y = pFreeParameters[offset++];
         gravity.z = pFreeParameters[offset++];
 
+        int cog_specified = pFreeParameters[offset++];
+
         cogtarg.x = pFreeParameters[offset++];
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
@@ -332,6 +334,34 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         for (int r = 1; r <= rowsize; r++) {
             for (int c = 1; c <= 6; c++) {
                 giwc(r, c) = pFreeParameters[offset++];
+            }
+        }
+
+        // sample around cog to find afeasible cog
+        if(cog_specified == 0)
+        {
+            bool valid_goal_found = false;
+            // if the cog goal does not make the robot in balance
+            if(!CheckSupport(cogtarg))
+            {
+                for(float tmp_cog_x = cogtarg.x-0.05; tmp_cog_x <= cogtarg.x+0.05; tmp_cog_x = tmp_cog_x+0.01)
+                {
+                    for(float tmp_cog_y = cogtarg.y-0.05; tmp_cog_y <= cogtarg.y+0.05; tmp_cog_y = tmp_cog_y+0.01)
+                    {
+                        if(CheckSupport(Vector(tmp_cog_x,tmp_cog_y,cogtarg.z)))
+                        {
+                            cogtarg.x = tmp_cog_x;
+                            cogtarg.y = tmp_cog_y;
+                            valid_goal_found = true;
+                            break;
+                        }
+                    }
+
+                    if(valid_goal_found)
+                    {
+                        break;
+                    }
+                }
             }
         }
 

@@ -882,7 +882,7 @@ int ElasticStrips::FindNearestContactRegion()
                 {
                     Vector feet_mean_position = 0.5 * (last_left_foot_xy_transform.trans + last_right_foot_xy_transform.trans);
 
-                    bool inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 1.0;
+                    bool inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 0.9;
                     bool inside_contact_region = sqrt((new_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) <= cr_it->radius;
                     bool region_within_reach = sqrt((cr_it->position-feet_mean_position).lengthsqr2()) <= 1.0 + cr_it->radius;
 
@@ -908,7 +908,7 @@ int ElasticStrips::FindNearestContactRegion()
 
                             new_contact_consistent_transform.trans = new_contact_consistent_transform.trans + step_size * step_unit_vector;
 
-                            inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 1.0;
+                            inside_armreach_cylinder = sqrt((new_contact_consistent_transform.trans-feet_mean_position).lengthsqr2()) <= 0.9;
 
                             inside_contact_region = sqrt((new_contact_consistent_transform.trans - cr_it->position).lengthsqr3()) <= cr_it->radius;
 
@@ -935,16 +935,13 @@ int ElasticStrips::FindNearestContactRegion()
                     found_contact_region = true;
                 }
 
-
                 if(dist < nearest_dist)
                 {
                     nearest_dist = dist;
                     nearest_contact_region = *cr_it;
                     final_contact_consistent_transform = new_contact_consistent_transform;
                 }
-
             }
-
 
             if(nearest_dist == 0.0)
             {
@@ -2672,6 +2669,7 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
                         // {
                         //     getchar();
                         // }
+                        // getchar();
                     }
 
                     // if(k > 5)
