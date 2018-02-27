@@ -459,6 +459,7 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
         if( !bCOG )
         {
             float total_weight = 0.0;
+            cogtarg = Vector(0,0,0);
             for(int i = 0; i < support_manips.size(); i++) {
                 Transform tf = robot->GetManipulator(support_manips[i])->GetTransform();
                 if(strcmp(support_manips[i].c_str(), "l_leg") == 0 || strcmp(support_manips[i].c_str(), "r_leg") == 0)
@@ -470,16 +471,18 @@ bool CBirrtProblem::DoGeneralIK(ostream& sout, istream& sinput)
                 {
                     cogtarg += tf.trans;
                     total_weight += 1.0;
+                    // total_weight += 0.0;
                 }
             }
             // cogtarg /= support_manips.size();
             cogtarg /= total_weight;
+            // cogtarg.z = cogtarg.z + 0.8;
 
             ikparams.push_back(0);
         }
         else
         {
-            ikparams.push_back(1);
+            ikparams.push_back(0);
         }
         ikparams.push_back(cogtarg.x);
         ikparams.push_back(cogtarg.y);

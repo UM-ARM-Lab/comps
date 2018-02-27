@@ -344,10 +344,12 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
             // if the cog goal does not make the robot in balance
             if(!CheckSupport(cogtarg))
             {
-                for(float tmp_cog_x = cogtarg.x-0.05; tmp_cog_x <= cogtarg.x+0.05; tmp_cog_x = tmp_cog_x+0.01)
+                for(float tmp_r = 0.01; tmp_r <= 0.5; tmp_r = tmp_r+0.01)
                 {
-                    for(float tmp_cog_y = cogtarg.y-0.05; tmp_cog_y <= cogtarg.y+0.05; tmp_cog_y = tmp_cog_y+0.01)
+                    for(float tmp_theta = 0; tmp_theta <= 360; tmp_theta = tmp_theta+10)
                     {
+                        float tmp_cog_x = cogtarg.x + tmp_r * sin(tmp_theta*M_PI/180.0);
+                        float tmp_cog_y = cogtarg.x + tmp_r * cos(tmp_theta*M_PI/180.0);
                         if(CheckSupport(Vector(tmp_cog_x,tmp_cog_y,cogtarg.z)))
                         {
                             cogtarg.x = tmp_cog_x;

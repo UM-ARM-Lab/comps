@@ -103,14 +103,14 @@ int ElasticStrips::RunElasticStrips(ostream& sout, istream& sinput)
     //params.reset(new ESParameters());
 
     RAVELOG_DEBUG("Starting Elastic Strips...\n");
-    RAVELOG_INFO("Checking ravelog_info\n");
+    // RAVELOG_INFO("Checking ravelog_info\n");
 
 
-    RAVELOG_INFO("Initialize robot object.\n");
+    // RAVELOG_INFO("Initialize robot object.\n");
     // Initialize _esRobot
 
     sinput >> _strRobotName;
-    RAVELOG_INFO("Robot Name: %s\n",_strRobotName.c_str());
+    // RAVELOG_INFO("Robot Name: %s\n",_strRobotName.c_str());
 
     GetEnv()->GetRobots(_esRobotVec);
     _num_robots = _esRobotVec.size();
@@ -761,14 +761,23 @@ int ElasticStrips::FindNearestContactRegion()
 
         for(std::vector<ContactRegion>::iterator cr_it = candidate_contact_regions.begin(); cr_it != candidate_contact_regions.end(); cr_it++)
         {
-            if(is_foot_contact && cr_it->contact_region_frame.trans.z > 0.4)
+            if(is_foot_contact && fabs(cr_it->normal.z) < 0.85)
             {
                 continue;
             }
-            else if(is_hand_contact && cr_it->contact_region_frame.trans.z <= 0.4)
+            else if(is_hand_contact && fabs(cr_it->normal.z) >= 0.85)
             {
                 continue;
             }
+
+            // if(is_foot_contact && cr_it->contact_region_frame.trans.z > 0.4)
+            // {
+            //     continue;
+            // }
+            // else if(is_hand_contact && cr_it->contact_region_frame.trans.z <= 0.4)
+            // {
+            //     continue;
+            // }
 
             float dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform);
 
@@ -864,7 +873,7 @@ int ElasticStrips::FindNearestContactRegion()
                             new_contact_consistent_transform = temp_contact_region_frame * temp_projected_contact_consistent_transform;
                             float new_dist = cr_it->DistToContactRegion(manip_name,contact_consistent_transform,new_contact_consistent_transform.trans);
 
-                            if(new_dist < dist)
+                            if(new_dist < dist-0.0001)
                             {
                                 cout << "Bug!!!" << dist << " " << new_dist << endl;
                                 getchar();
@@ -2470,7 +2479,8 @@ OpenRAVE::PlannerStatus ElasticStrips::PlanPath(TrajectoryBasePtr ptraj)
 
     }
     
-    RAVELOG_INFO("Initialize waypoints status tracker.\n");
+    if(bPrint)
+        RAVELOG_INFO("Initialize waypoints status tracker.\n");
 
     _stable_waypoint.resize(ptraj->GetNumWaypoints(),false);
 
