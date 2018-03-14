@@ -520,7 +520,7 @@ void ElasticStrips::LoadContactRegions()
 {
     std::ifstream f_contact_region;
     // /yuchi_ws/escher_openrave/escher_openrave/scripts
-    f_contact_region.open("/home/yuchi/flor_repo/catkin_ws/src/yuchi_ws/escher_openrave/escher_openrave/scripts/contact_regions.txt",std::ifstream::in);
+    f_contact_region.open("contact_regions.txt",std::ifstream::in);
     string data_string;
     _contact_regions.clear();
     while(getline(f_contact_region,data_string))

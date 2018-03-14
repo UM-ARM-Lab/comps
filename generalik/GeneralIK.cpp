@@ -171,18 +171,24 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     //     //     W(i+1) = 10.0;
     //     // }
 
-    //     if(DOF_name == "l_shoulder_pitch" || DOF_name == "l_shoulder_roll" || DOF_name == "l_shoulder_yaw" || DOF_name == "l_elbow_pitch" || DOF_name == "l_elbow_roll" || DOF_name == "l_wrist_pitch" || DOF_name == "l_wrist_yaw")
+    //     // if(DOF_name == "l_shoulder_pitch" || DOF_name == "l_shoulder_roll" || DOF_name == "l_shoulder_yaw" || DOF_name == "l_elbow_pitch" || DOF_name == "l_elbow_roll" || DOF_name == "l_wrist_pitch" || DOF_name == "l_wrist_yaw")
+    //     // {
+    //     //     W(i+1) = 100.0;
+    //     // }
+    //     // else if(DOF_name == "r_shoulder_pitch" || DOF_name == "r_shoulder_roll" || DOF_name == "r_shoulder_yaw" || DOF_name == "r_elbow_pitch" || DOF_name == "r_elbow_roll" || DOF_name == "r_wrist_pitch" || DOF_name == "r_wrist_yaw")
+    //     // {
+    //     //     W(i+1) = 100.0;
+    //     // }
+    //     // else
+    //     // {
+    //     //     W(i+1) = 0.001;
+    //     // }
+
+    //     if(DOF_name == "roll_revolute_joint" || DOF_name == "pitch_revolute_joint" || DOF_name == "yaw_revolute_joint" || DOF_name == "waist_yaw")
     //     {
-    //         W(i+1) = 100.0;
+    //         W(i+1) = 0.5;
     //     }
-    //     else if(DOF_name == "r_shoulder_pitch" || DOF_name == "r_shoulder_roll" || DOF_name == "r_shoulder_yaw" || DOF_name == "r_elbow_pitch" || DOF_name == "r_elbow_roll" || DOF_name == "r_wrist_pitch" || DOF_name == "r_wrist_yaw")
-    //     {
-    //         W(i+1) = 100.0;
-    //     }
-    //     else
-    //     {
-    //         W(i+1) = 0.001;
-    //     }
+
 
     //     // if(DOF_name == "waist_yaw")
     //     // {
@@ -1356,6 +1362,8 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
             NEWMAT::DiagonalMatrix Reg2(Jtemp2.Nrows());
             Reg = 0.0001;
             Reg2 = 0.0001;
+            // Reg = 0.01;
+            // Reg2 = 0.01;
             M << (J*J.t()) + Reg;
             // M << (J*Winv*J.t()) + Reg;
 
@@ -1366,6 +1374,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             Jplus = J.t()*Minv;
             // Jplus = Winv*J.t()*Minv;
+            
             //PrintMatrix(Jplus.Store(),_numdofs,_numtargdims,"Jplus: ");
 
             //Add collision avoidance here
