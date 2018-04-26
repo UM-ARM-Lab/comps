@@ -52,7 +52,7 @@ public:
     bool Solve(const OpenRAVE::IkParameterization&, int, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, boost::shared_ptr<std::vector<boost::shared_ptr<OpenRAVE::IkReturn>, std::allocator<boost::shared_ptr<OpenRAVE::IkReturn> > > >) { return false; }
     bool Solve(const IkParameterization& param, const std::vector<double, std::allocator<double> >&, const std::vector<double, std::allocator<double> >&, int, boost::shared_ptr<std::vector<double, std::allocator<double> > >, OpenRAVE::IkReturnPtr) { return false; }
     bool Solve(const IkParameterization&, const std::vector<double, std::allocator<double> >&, int, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, boost::shared_ptr<std::vector<boost::shared_ptr<OpenRAVE::IkReturn>, std::allocator<boost::shared_ptr<OpenRAVE::IkReturn> > > >) { return false; }
-    virtual bool Init(RobotBase::ManipulatorConstPtr pconstmanip){RobotBase::ManipulatorPtr pmanip = boost::const_pointer_cast<RobotBase::Manipulator>(pconstmanip); Init(pmanip);}
+    virtual bool Init(RobotBase::ManipulatorConstPtr pconstmanip){RobotBase::ManipulatorPtr pmanip = boost::const_pointer_cast<RobotBase::Manipulator>(pconstmanip); return Init(pmanip);}
 #endif
 
     virtual bool Init(RobotBase::ManipulatorPtr pmanip);
