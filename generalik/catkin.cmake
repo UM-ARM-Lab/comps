@@ -13,6 +13,9 @@ find_package(catkin REQUIRED COMPONENTS openrave_catkin)
 # These macros typically create (for a package named 'foo'):
 # foo_INCLUDE_DIRS, foo_LIBRARIES, foo_LIBRARY_DIRS
 find_package(Boost REQUIRED regex system)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+find_package(CDD REQUIRED)
  
 # Set up the ROS Catkin package settings.
 catkin_package()
@@ -25,6 +28,7 @@ catkin_package()
 include_directories(
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
+    ${CDD_INCLUDE_DIRS}
 )
 
 # CMake has add_executable and add_library functions to define build 'targets'.
@@ -37,4 +41,5 @@ target_link_libraries("${PROJECT_NAME}_plugin"
     newmat
     ${Boost_LIBRARIES}
     ${catkin_LIBRARIES}
+    ${CDD_LIBRARIES}
 )
