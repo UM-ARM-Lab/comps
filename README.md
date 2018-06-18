@@ -1,14 +1,14 @@
 # comps
 Fork of the Constrained Manipulation Planning Suite (CoMPS) by Dmitry Berenson
 
-# Dependency
+## Dependency
 
-NEWMAT:
+### NEWMAT:
 
 `sudo apt-get install libnewmat10-dev`
 
-cdd lib:
-https://www.inf.ethz.ch/personal/fukudak/cdd_home/
+### cdd lib:
+https://www.inf.ethz.ch/personal/fukudak/cdd_home/  
 
 ```
 sudo apt-get install libgmp3-dev
@@ -22,3 +22,6 @@ cd /usr/local/include
 sudo mkdir cdd
 sudo mv cdd_f.h cddmp_f.h cddtypes_f.h cdd.h cddmp.h cddtypes.h setoper.h cdd
 ```
+
+Install script for installing cdd to `~/local`:  
+https://github.com/UM-ARM-Lab/documentation/blob/master/scripts/install_libcdd.sh
