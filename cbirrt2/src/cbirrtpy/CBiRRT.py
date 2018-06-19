@@ -159,7 +159,7 @@ class CBiRRT(object):
                     cmd.append(len(jointgoal))
                     cmd.extend(jointgoal)
             except (AssertionError, TypeError):  # Fall back to single list of goals
-                # "jointgoals" will have already been appended
+                cmd.append("jointgoals")
                 cmd.append(len(jointgoals))
                 cmd.extend(jointgoals)
 
@@ -171,7 +171,7 @@ class CBiRRT(object):
                     cmd.append(len(jointstart))
                     cmd.extend(jointstart)
             except (AssertionError, TypeError):  # Fall back to single list of starts
-                # "jointstarts" will have already been appended
+                cmd.append("jointstarts")
                 cmd.append(len(jointstarts))
                 cmd.extend(jointstarts)
 
