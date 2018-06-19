@@ -59,9 +59,10 @@ class CBiRRT(object):
         self.problem.SendCommand('GrabBody name ' + body.GetName())
 
     def RunCBiRRT(self, jointgoals=None, jointstarts=None, ikguess=None, Tattachedik_0=None, smoothingitrs=None,
-                  filename=None, timelimit=None, TSRChains=None, supportlinks=None, polyscale=None, polytrans=None,
-                  support=None, gravity=None, heldobject=None, psample=None, bikfastsinglesolution=None,
-                  planinnewthread=None, allowlimadj=None, smoothtrajonly=None, outputtrajobj=False, printcommand=False):
+                  filename="/tmp/cmovetraj.txt", timelimit=None, TSRChains=None, supportlinks=None, polyscale=None,
+                  polytrans=None, support=None, gravity=None, heldobject=None, psample=None, bikfastsinglesolution=None,
+                  planinnewthread=None, allowlimadj=None, smoothtrajonly=None, outputtrajobj=False,
+                  exportfulltraj=None, printcommand=False):
         """
         Run the CBiRRT planner.
 
@@ -102,7 +103,7 @@ class CBiRRT(object):
                     for each manipulator (optional, defaults to identity)
         :param int smoothingitrs: Number of iterations of smoothing to apply to the final trajectory (optional,
                     defaults to 300)
-        :param str filename: Filename of generated trajectory file (optional, defaults to "cmovetraj.txt")
+        :param str filename: Filename of generated trajectory file (optional, defaults to "/tmp/cmovetraj.txt")
         :param float timelimit: Time limit in seconds before planning gives up (optional, defaults to 25 seconds)
         :param list[TSRChain] TSRChains: A list of TSR chains to constrain the path, start, and/or goal (optional)
         :param list[string|rave.KinBody.Link] supportlinks: Links to use to calculate the robot's support polygon,
@@ -143,6 +144,8 @@ class CBiRRT(object):
         :param bool outputtrajobj: If outputtrajobj is True then this method returns a 2-tuple of CBiRRT's output and
                     the resulting trajectory. This is incompatible with the planinnewthread parameter. (optional,
                     defaults to False)
+        :param bool exportfulltraj: If this is True, the trajectory saved to file (and optionally returned) is for the
+                    full robot, in internal DOF order rather than just the active DOF (optional, defaults to False)
         :param bool printcommand: If this True, prints the resulting command string immediately before calling CBiRRT,
                     meant for debuggging (optional, defaults to False)
         :return str|(str, rave.Trajectory): If outputtrajobj is False, returns the output of CBiRRT. Otheriwse
@@ -269,6 +272,10 @@ class CBiRRT(object):
             cmd.append("smoothtrajonly")
             cmd.append(smoothtrajonly)
 
+        if exportfulltraj is not None:
+            cmd.append("exportfulltraj")
+            cmd.append(int(exportfulltraj))
+
         cmd_str = " ".join(str(item) for item in cmd)
 
         if printcommand:
@@ -282,7 +289,7 @@ class CBiRRT(object):
             raise rave.PlanningError(cbirrt_result.lstrip("0 "))
 
         if outputtrajobj:
-            trajobj = load_traj_from_file(filename or "cmovetraj.txt", self.env)
+            trajobj = load_traj_from_file(filename, self.env)
             return (cbirrt_result.lstrip("1 "), trajobj)
         else:
             return cbirrt_result.lstrip("1 ")
