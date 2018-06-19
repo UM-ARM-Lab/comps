@@ -570,7 +570,7 @@ bool CBirrtProblem::CheckSupport(ostream& sout, istream& sinput)
 }
 
 
-void CBirrtProblem::PlannerWorker(PlannerBasePtr _pTCplanner, TrajectoryBasePtr ptraj, string filename)
+void CBirrtProblem::PlannerWorker(PlannerBasePtr _pTCplanner, TrajectoryBasePtr ptraj, string filename, bool bExportFullTraj)
 {
     RAVELOG_INFO("Creating lock in new thread...\n");
     EnvironmentMutex::scoped_lock lockenv(GetEnv()->GetMutex());
@@ -580,7 +580,7 @@ void CBirrtProblem::PlannerWorker(PlannerBasePtr _pTCplanner, TrajectoryBasePtr 
     //NOTE: _plannerState is a different class than OpenRAVE::PlannerStatus (includes a "Planning" state)
     if(bSuccess == PS_HasSolution)
     {
-        WriteTraj(ptraj, filename);
+        WriteTraj(ptraj, filename, bExportFullTraj);
         _plannerState = PS_PlanSucceeded;
     }
     else
@@ -603,7 +603,7 @@ void CBirrtProblem::PlannerWorker(PlannerBasePtr _pTCplanner, TrajectoryBasePtr 
     RAVELOG_INFO("Planner worker thread terminating.\n");
 }
 
-void CBirrtProblem::WriteTraj(TrajectoryBasePtr ptraj, string filename)
+void CBirrtProblem::WriteTraj(TrajectoryBasePtr ptraj, string filename, bool bExportFullTraj)
 {
     //TrajectoryBasePtr pfulltraj = RaveCreateTrajectory(GetEnv(),robot->GetDOF());
     //robot->GetFullTrajectoryFromActive(pfulltraj, ptraj);
@@ -621,37 +621,39 @@ void CBirrtProblem::WriteTraj(TrajectoryBasePtr ptraj, string filename)
     //        RAVELOG_INFO("name %d: %s\n",i,ptraj->GetConfigurationSpecification()._vgroups[i].name.c_str());
     //    }
 
-
-
-    //this is the equivalent of GetFullTrajectoryFromActive
-    ConfigurationSpecification activespec = ptraj->GetConfigurationSpecification();
-    std::set<KinBodyPtr> sbodies;
-    FOREACH(itgroup, activespec._vgroups) {
-        stringstream ss(itgroup->name);
-        string type, bodyname;
-        ss >> type;
-        ss >> bodyname;
-        //RAVELOG_INFO("Bodyname: %s\n",bodyname.c_str());
-        if(GetEnv()->GetKinBody(bodyname))
-        {
-            sbodies.insert(GetEnv()->GetKinBody(bodyname));
-        }
-    }
-
-    ConfigurationSpecification spec;
-    set <KinBodyPtr>::iterator si;
-    for (si=sbodies.begin(); si!=sbodies.end(); si++)
+    if (bExportFullTraj)
     {
-        std::vector<int> indices((*si)->GetDOF());
-        for(int i = 0; i < (*si)->GetDOF(); ++i) {
-            indices[i] = i;
+        //this is the equivalent of GetFullTrajectoryFromActive
+        ConfigurationSpecification activespec = ptraj->GetConfigurationSpecification();
+        std::set<KinBodyPtr> sbodies;
+        FOREACH(itgroup, activespec._vgroups)
+        {
+            stringstream ss(itgroup->name);
+            string type, bodyname;
+            ss >> type;
+            ss >> bodyname;
+            //RAVELOG_INFO("Bodyname: %s\n",bodyname.c_str());
+            if(GetEnv()->GetKinBody(bodyname))
+            {
+                sbodies.insert(GetEnv()->GetKinBody(bodyname));
+            }
         }
-        ConfigurationSpecification tempspec = (*si)->GetConfigurationSpecificationIndices(indices, "linear");
-        tempspec.AddDerivativeGroups(1,true); // add velocity + timestamp
-        spec += tempspec;
-    }
 
-    OpenRAVE::planningutils::ConvertTrajectorySpecification(ptraj, spec);
+        ConfigurationSpecification spec;
+        for (set<KinBodyPtr>::iterator si=sbodies.begin(); si!=sbodies.end(); si++)
+        {
+            std::vector<int> indices((*si)->GetDOF());
+            for(int i = 0; i < (*si)->GetDOF(); ++i)
+            {
+                indices[i] = i;
+            }
+            ConfigurationSpecification tempspec = (*si)->GetConfigurationSpecificationIndices(indices, "linear");
+            tempspec.AddDerivativeGroups(1, true); // add velocity + timestamp
+            spec += tempspec;
+        }
+
+        OpenRAVE::planningutils::ConvertTrajectorySpecification(ptraj, spec);
+    }
 
 
     ofstream outfile(filename.c_str(),ios::out);
@@ -659,7 +661,7 @@ void CBirrtProblem::WriteTraj(TrajectoryBasePtr ptraj, string filename)
     //pfulltraj->Write(outfile, Trajectory::TO_IncludeTimestamps|Trajectory::TO_IncludeBaseTransformation);
     ptraj->serialize(outfile);
     outfile.close();
-    chmod(filename.c_str(), S_IRWXG | S_IRWXO | S_IRWXU); //chmod 777
+    chmod(filename.c_str(), DEFFILEMODE); //chmod 666
 }
 
 
@@ -747,7 +749,8 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
     Vector gravity(0.0, 0.0, -9.8);     // from gravity
     int balance_mode = 0;
     
-    string filename = "cmovetraj.txt";
+    string filename = "/tmp/cmovetraj.txt";
+    bool bExportFullTraj = false;
     string smoothtrajfilename;
     params->Tattachedik_0.resize(robot->GetManipulators().size());
 
@@ -814,6 +817,9 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
         else if( stricmp(cmd.c_str(), "filename") == 0) {
             sinput >> filename;
         }
+        else if( stricmp(cmd.c_str(), "exportfulltraj") == 0) {
+            sinput >> bExportFullTraj;
+        }
         else if( stricmp(cmd.c_str(), "timelimit") == 0) {
             sinput >> params->timelimit;
         }
@@ -832,7 +838,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
                 params->bsamplinggoal = true;
             }
         }
-        else if(stricmp(cmd.c_str(), "supportlinks") == 0 ){
+        else if( stricmp(cmd.c_str(), "supportlinks") == 0 ){
             sinput >> numsupportlinks;
             for(int i =0; i < numsupportlinks; i++)
             {
@@ -841,17 +847,17 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
             }
             balance_mode = 1;
         }
-        else if(stricmp(cmd.c_str(), "polyscale") == 0 ){
+        else if( stricmp(cmd.c_str(), "polyscale") == 0 ){
             sinput >> polyscale.x;
             sinput >> polyscale.y;
             sinput >> polyscale.z;
         }
-        else if(stricmp(cmd.c_str(), "polytrans") == 0 ){
+        else if( stricmp(cmd.c_str(), "polytrans") == 0 ){
             sinput >> polytrans.x;
             sinput >> polytrans.y;
             sinput >> polytrans.z;
         }
-        else if (stricmp(cmd.c_str(), "support") == 0){
+        else if( stricmp(cmd.c_str(), "support") == 0){
             // Support specifier for GIWC stability checking. May be provided more than once. Format is
             // "support {manip_index} {friction_coeff} {mode}" where mode is a bitmask indicating whether the support
             // link is active during the start, entire path, or end (expressed in binary). The most common modes are
@@ -864,7 +870,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
             sinput >> tempstr; support_modes.push_back(strtol(tempstr.c_str(), NULL, 2));
             balance_mode = 2;
         }
-        else if (stricmp(cmd.c_str(), "gravity") == 0){
+        else if( stricmp(cmd.c_str(), "gravity") == 0){
             sinput >> gravity.x;
             sinput >> gravity.y;
             sinput >> gravity.z;
@@ -1084,7 +1090,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
     if(bPlanInNewThread)
     {
         RAVELOG_INFO("Launching planner in new thread\n");
-        _plannerThread.reset(new boost::thread(boost::bind(&CBirrtProblem::PlannerWorker, this, _1, _2, _3),_pTCplanner,ptraj, filename));
+        _plannerThread.reset(new boost::thread(boost::bind(&CBirrtProblem::PlannerWorker, this, _1, _2, _3, _4), _pTCplanner, ptraj, filename, bExportFullTraj));
         _pTCplanner->SendCommand(outputstream,command);
         _plannerThread->detach();
         sout << 1 << " " << outputstream.str();
@@ -1157,7 +1163,7 @@ int CBirrtProblem::RunCBirrt(ostream& sout, istream& sinput)
         return -1;
     }
 
-    WriteTraj(ptraj, filename);
+    WriteTraj(ptraj, filename, bExportFullTraj);
     _pTCplanner->SendCommand(outputstream,command);
     sout << 1 << " " << outputstream.str();
     return 1;
