@@ -46,7 +46,7 @@ public:
     virtual void Destroy();
     virtual int main(const std::string& args);
     virtual void SetActiveRobots(const std::vector<RobotBasePtr>& robots);
-    
+
     virtual bool SendCommand(std::ostream& sout, std::istream& sinput);
 
     class Point2D
@@ -148,10 +148,10 @@ private:
     PlannerBasePtr _pPlanner;
     bool _reusePlanner;
     IkSolverBasePtr _pIkSolver;
-    
+
     boost::shared_ptr<boost::thread> _plannerThread;
     enum PlannerState _plannerState;
-    vector<KinBody::JointPtr> _limadj_joints; 
+    vector<KinBody::JointPtr> _limadj_joints;
     vector<vector<dReal> > _limadj_lowers;
     vector<vector<dReal> > _limadj_uppers;
 

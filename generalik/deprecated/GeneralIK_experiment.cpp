@@ -97,7 +97,7 @@ void GeneralIK::ResizeMatrices()
     Jtemp2.ReSize(2,_numdofs);
 
     ///////////////Nathan//////////////
-    D.ReSize(_numdofs);  
+    D.ReSize(_numdofs);
     theta.resize(_numdofs);
     theta_old.resize(_numdofs);
     whichTF.resize(_numdofs,TF_Sigmoid);
@@ -111,7 +111,7 @@ void GeneralIK::ResizeMatrices()
 
 // end eff transform is the transform of the wrist with respect to the base arm link
 bool GeneralIK::Solve(const Transform &_T, const dReal* q0, bool bCheckEnvCollision, dReal* qResult)
-{    
+{
 
 }
 
@@ -130,25 +130,25 @@ bool GeneralIK::Solve(const Transform &_T, const dReal* q0, const dReal* pFreePa
 
     bool bsuccess = true;
     _pRobot->GetActiveDOFLimits(_lowerLimit,_upperLimit);
-    
+
     int numdofs = _pRobot->GetActiveDOF();
 
 
     std::vector<dReal> q_s(numdofs);
 
     for(int i = 0; i < numdofs; i++)
-        q_s[i] = q0[i];    
+        q_s[i] = q0[i];
 
 
 
     //read in the ik targets
     int numtargets = (int) pFreeParameters[0];
-    
+
     for(int i = 0; i < numtargets; i++)
     {
         _targmanips.push_back(pFreeParameters[i*8 + 1]);
         _targtms.push_back(Transform(Vector(pFreeParameters[i*8 + 2],pFreeParameters[i*8 + 3],pFreeParameters[i*8 + 4],pFreeParameters[i*8 + 5]),Vector(pFreeParameters[i*8 + 6],pFreeParameters[i*8 + 7],pFreeParameters[i*8 + 8]) ));
-        if(bPRINT)       
+        if(bPRINT)
              RAVELOG_INFO("Targtm: %f %f %f %f    %f %f %f\n",_targtms[i].rot.x,_targtms[i].rot.y,_targtms[i].rot.z,_targtms[i].rot.w,_targtms[i].trans.x,_targtms[i].trans.y,_targtms[i].trans.z);
     }
 
@@ -160,7 +160,7 @@ bool GeneralIK::Solve(const Transform &_T, const dReal* q0, const dReal* pFreePa
         cogtarg.x = pFreeParameters[numtargets*8 + 2];
         cogtarg.y = pFreeParameters[numtargets*8 + 3];
         cogtarg.z = pFreeParameters[numtargets*8 + 4];
-        RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
+        RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);
 
         //read in the support polygon
         int numpoints = pFreeParameters[numtargets*8 + 5];
@@ -197,7 +197,7 @@ bool GeneralIK::Solve(const Transform &_T, const dReal* q0, const dReal* pFreePa
 
 
     _numdofs = numdofs;
-    
+
 
     if( (_oldnumdofs != _numdofs) || (_oldnumtargdims != _numtargdims) )
     {
@@ -243,7 +243,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
         RAVELOG_INFO("Solving...\n");
 
     //clear from previous run
-    _numitr = 0;    
+    _numitr = 0;
     badjointinds.resize(0);
     prev_error = 1000000.0;
 
@@ -253,7 +253,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
     epsilon = 0.001;
 
     bClearBadJoints = true; //setting this to true will make the algorithm attempt to move joints that are at joint limits at every iteration
-        
+
 
     if(bDRAW)
     {
@@ -285,8 +285,8 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
         x_error = TransformDifferenceVectorized(dx.Store(),_targtms,_curtms);
 
         if(bPRINT)
-            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");           
-        
+            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");
+
 
         if(bPRINT)
             RAVELOG_INFO("x error: %f\n",x_error);
@@ -311,7 +311,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
 
         if(bPRINT)
             RAVELOG_INFO("stepsize: %f\n",stepsize);
-        
+
         //don't let step size get too small
 
         if(stepsize < epsilon)
@@ -337,7 +337,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
             if(x_error < epsilon && (!bBalance || CheckSupport(curcog)))
-            {        
+            {
                 if(bPRINT)
                     RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
                 return true;
@@ -359,7 +359,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                    GetCOGJacobian(Transform(),Jtemp2,curcog);
                    curcog.z = 0;
                    if(!CheckSupport(curcog))
-                   {    
+                   {
 
                         GetClosestPointOnPolygon(curcog,cogtarg,perpvec);
                         bBalanceGradient = true;
@@ -374,7 +374,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                    }
                 }
 
-    
+
             }
             //eliminate bad joint columns from the Jacobian
             for(int j = 0; j < badjointinds.size(); j++)
@@ -397,7 +397,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
             if(x_error > stepsize)
                 magnitude = stepsize/x_error;
             else
-                magnitude = 1;       
+                magnitude = 1;
 
 
             M << (J*J.t());// + Reg;
@@ -411,17 +411,17 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
 
             //PrintMatrix(Jplus.Store(),Jplus.Nrows(),Jplus.Ncols(),"Jplus: ");
 
-            
+
             for(int i = 0; i < _targmanips.size(); i++)
             {
                 dx[3 + i*6] = -dx[3 + i*6];
                 dx[4 + i*6] = -dx[4 + i*6];
                 dx[5 + i*6] = -dx[5 + i*6];
             }
-       
+
 
             //this will try to move toward the joint centers
-            //for(int i = 0; i < _numdofs; i++)   
+            //for(int i = 0; i < _numdofs; i++)
             //{
             //    dReal value = 0.0;
             //    value = q_s[i] - 0.5*(_lowerLimit[i] + _upperLimit[i]);
@@ -454,7 +454,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                optionalbalancedx[0] = curcog.x - 0;
                optionalbalancedx[1] = curcog.y - 0;
 
-               //step = (Jtemp2.t()*Mbalinv)*(1.01*balancedx) + 
+               //step = (Jtemp2.t()*Mbalinv)*(1.01*balancedx) +
                //       (NEWMAT::IdentityMatrix(_numdofs) - (Jtemp2.t()*Mbalinv)*Jtemp2)*Jplus*(magnitude*dx)  +
                //       (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*(Jtemp2.t()*Mbalinv)*(optionalbalancedx);
 
@@ -484,7 +484,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
             }
             if(bPRINT)
                 PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
-           
+
 
             //set dx back in case we are in a joint limit loop
             for(int i = 0; i < _targmanips.size(); i++)
@@ -493,7 +493,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                 dx[4 + i*6] = -dx[4 + i*6];
                 dx[5 + i*6] = -dx[5 + i*6];
             }
-        
+
 
             //add step and check for joint limits
             bLimit = false;
@@ -509,12 +509,12 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
                         q_s[i] = _lowerLimit[i];
                     if(q_s[i] > _upperLimit[i])
                         q_s[i] = _upperLimit[i];
-        
+
                     badjointinds.push_back(i); //note this will never add the same joint twice, even if bClearBadJoints = false
                     bLimit = true;
 
                 }
-                
+
 
             }
 
@@ -526,7 +526,7 @@ bool GeneralIK::_Solve(std::vector<dReal>& q_s)
             }
 
         }while(bLimit);
-    
+
 
         if(bPRINT)
             RAVELOG_INFO("after limits\n");
@@ -597,7 +597,7 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
 
     //PrintMatrix(_Jr0.Store(),3,_numdofs,"Jr0: ");
 
-    
+
     _TMtask = TransformMatrix(taskframe_in.inverse());
     _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
     _tasktm(2,1) = _TMtask.m[4];        _tasktm(2,2) = _TMtask.m[5];        _tasktm(2,3) = _TMtask.m[6];
@@ -610,8 +610,8 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
     //PrintMatrix(_Jp.Store(),3,_numdofs,"Jp: ");
     //PrintMatrix(_Jr.Store(),3,_numdofs,"Jr: ");
 
-    //convert current rotation to euler angles (RPY) 
-    QuatToRPY(taskframe_in.inverse()*tEE,_psi,_theta,_phi);    
+    //convert current rotation to euler angles (RPY)
+    QuatToRPY(taskframe_in.inverse()*tEE,_psi,_theta,_phi);
     //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
     Cphi = cos(_phi);
@@ -688,7 +688,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
     if( fTotalMass > 0 )
         center /= fTotalMass;
     //RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
-   
+
     J = J/fTotalMass;
 
 
@@ -705,7 +705,7 @@ void GeneralIK::PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char
     wstringstream s;
     s.setf(ios::fixed,ios::floatfield);
     s.precision(5);
-    s << "\n"; 
+    s << "\n";
     if(statement != NULL)
         s << statement <<"\n";
     for(int i = 0; i < numrows; i++)
@@ -723,7 +723,7 @@ void GeneralIK::PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char
 
 void GeneralIK::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
 {
-    
+
     a = tm.rot.x;
     b = tm.rot.y;
     c = tm.rot.z;
@@ -763,10 +763,10 @@ bool GeneralIK::CheckSupport(Vector center)
      (testx < (vertx[j]-vertx[i]) * (testy-verty[i]) / (verty[j]-verty[i]) + vertx[i]) )
        c = !c;
     }
-   
+
     center.z = 0;
     solutionpath.push_back(center);
-    if(c)    
+    if(c)
     {
         GetEnv()->plot3(center, 1, 0, 10, Vector(0,1,0) );
         return true;
@@ -789,7 +789,7 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         RAVELOG_INFO("Solving...\n");
 
     //clear from previous run
-    _numitr = 0;    
+    _numitr = 0;
     badjointinds.resize(0);
     prev_error = 1000000.0;
 
@@ -820,7 +820,7 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         _numitr++;
 
         bLimit = false;
-        
+
         // Setup robot stuff
         _pRobot->SetActiveDOFValues(NULL, &q_s[0]);
         for(int i = 0; i < _targmanips.size();i++)
@@ -834,12 +834,12 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         x_error = TransformDifferenceVectorized(dx.Store(),_targtms,_curtms);
 
         if(bPRINT)
-            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");           
-        
+            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");
+
 
         if(bPRINT)
             RAVELOG_INFO("x error: %f\n",x_error);
-    
+
 
         // Stepsize stuff - automatically reduces stepsize if error increases
         //if(bLimit || x_error >= prev_error || prev_error - x_error < epsilon)
@@ -873,7 +873,7 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
 
         stepsize = maxstep;
 
-        
+
         if(bPRINT)
             RAVELOG_INFO("stepsize: %f\n",stepsize);
 
@@ -889,10 +889,10 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         theta_old = theta;
         whichTF_old = whichTF;
         prev_error = x_error;
-    
+
 
         if(x_error < epsilon)
-        {        
+        {
             //if(bPRINT)
             RAVELOG_INFO("Projection successful _numitr: %d\n",_numitr);
             return true;
@@ -911,25 +911,25 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         if(x_error > stepsize)
             magnitude = stepsize/x_error;
         else
-            magnitude = 1;       
+            magnitude = 1;
 
         GetD(whichTF,theta,D);
         /*
         NEWMAT::Matrix d(1,D.Ncols());
         for (int i = 0; i < D.Nrows(); ++i){
-            d[0][i] = D[i];        
+            d[0][i] = D[i];
         }
         PrintMatrix(d.Store(),d.Nrows(),d.Ncols(),"D: ");
         */
 
         M = 0.0;
         Minv = 0.0;
-        
+
 
         //M << (J.t()*J);
         //invConditioning(1000,M,Minv);
         //Jplus = D.i()*(Minv)*J.t();
-        
+
 
         J = J*D;
         M << (J*J.t());
@@ -937,23 +937,23 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         //Minv = NEWMAT::IdentityMatrix(_numtargdims);
         Jplus = J.t()*(Minv);
         //Jplus = J.t();
-        
+
         //PrintMatrix(Jplus.Store(),Jplus.Nrows(),Jplus.Ncols(),"Jplus: ");
 
-        
+
         for(int i = 0; i < _targmanips.size(); i++)
         {
             dx[3 + i*6] = -dx[3 + i*6];
             dx[4 + i*6] = -dx[4 + i*6];
             dx[5 + i*6] = -dx[5 + i*6];
         }
-   
+
 
         step = magnitude*Jplus*(dx);
 
         if(bPRINT)
             PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
-       
+
 
         //set dx back in case we are in a joint limit loop
         for(int i = 0; i < _targmanips.size(); i++)
@@ -975,10 +975,10 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
         //determine which transfer function we should use for the next step
         for(int i =0; i < _numdofs; i++)
         {
-            
+
             if( step[i]*(q_s[i] - 0.5*(_lowerLimit[i] + _upperLimit[i])) < 0)
             {
-               // RAVELOG_INFO("%d: old: %d  new: %d\n",i,whichTF[i],TF_Sigmoid);    
+               // RAVELOG_INFO("%d: old: %d  new: %d\n",i,whichTF[i],TF_Sigmoid);
                 whichTF[i] = TF_Sigmoid;
             }
             else
@@ -1005,7 +1005,7 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
                     q_s[i] = _lowerLimit[i]+0.01;
                 if(q_s[i] > _upperLimit[i])
                     q_s[i] = _upperLimit[i]-0.01;
-    
+
                 bLimit = true;
 
             }
@@ -1020,7 +1020,7 @@ bool GeneralIK::_SolveNathanHacked(std::vector<dReal>& q_s)
     }
     //return true;
     RAVELOG_INFO("Goal not reached...");
-    return false;    
+    return false;
 }
 
 bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
@@ -1031,7 +1031,7 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         RAVELOG_INFO("Solving...\n");
 
     //clear from previous run
-    _numitr = 0;    
+    _numitr = 0;
     badjointinds.resize(0);
     prev_error = 1000000.0;
 
@@ -1072,12 +1072,12 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         x_error = TransformDifferenceVectorized(dx.Store(),_targtms,_curtms);
 
         if(bPRINT)
-            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");           
-        
+            PrintMatrix(dx.Store(),1,dx.Nrows(),"dx: ");
+
 
         if(bPRINT)
             RAVELOG_INFO("x error: %f\n",x_error);
-    
+
 
         //if(bLimit || x_error >= prev_error || prev_error - x_error < epsilon)
         if((x_error >= prev_error || prev_error - x_error < epsilon/10) && x_error > epsilon)
@@ -1099,7 +1099,7 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         else
             stepsize = maxstep;
 
-        
+
         if(bPRINT)
             RAVELOG_INFO("stepsize: %f\n",stepsize);
 
@@ -1115,10 +1115,10 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         theta_old = theta;
         whichTF_old = whichTF;
         prev_error = x_error;
-    
+
 
         if(x_error < epsilon)
-        {        
+        {
             if(bPRINT)
                 RAVELOG_INFO("Projection successfull _numitr: %d\n",_numitr);
             return true;
@@ -1137,42 +1137,42 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         if(x_error > stepsize)
             magnitude = stepsize/x_error;
         else
-            magnitude = 1;       
+            magnitude = 1;
 
         GetD(whichTF,theta,D);
-        
+
 
         M = 0.0;
         Minv = 0.0;
-        
+
 
         //M << (J.t()*J);
         //invConditioning(1000,M,Minv);
         //Jplus = D.i()*(Minv)*J.t();
-        
+
 
         J = J*D;
         M << (J*J.t());
         invConditioning(10000,M,Minv);
         //Minv = NEWMAT::IdentityMatrix(_numtargdims);
         Jplus = J.t()*(Minv);
-        
+
         //PrintMatrix(Jplus.Store(),Jplus.Nrows(),Jplus.Ncols(),"Jplus: ");
 
-        
+
         for(int i = 0; i < _targmanips.size(); i++)
         {
             dx[3 + i*6] = -dx[3 + i*6];
             dx[4 + i*6] = -dx[4 + i*6];
             dx[5 + i*6] = -dx[5 + i*6];
         }
-   
+
 
         step = magnitude*Jplus*(dx);
 
         if(bPRINT)
             PrintMatrix(step.Store(),1,step.Nrows(),"step: ");
-       
+
 
         //set dx back in case we are in a joint limit loop
         for(int i = 0; i < _targmanips.size(); i++)
@@ -1194,10 +1194,10 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         //determine which transfer function we should use for the next step
         for(int i =0; i < _numdofs; i++)
         {
-            
+
             if( step[i]*(q_s[i] - 0.5*(_lowerLimit[i] + _upperLimit[i])) < 0)
             {
-               // RAVELOG_INFO("%d: old: %d  new: %d\n",i,whichTF[i],TF_Sigmoid);    
+               // RAVELOG_INFO("%d: old: %d  new: %d\n",i,whichTF[i],TF_Sigmoid);
                 whichTF[i] = TF_Sigmoid;
             }
             else
@@ -1224,7 +1224,7 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
                     q_s[i] = _lowerLimit[i]+0.01;
                 if(q_s[i] > _upperLimit[i])
                     q_s[i] = _upperLimit[i]-0.01;
-    
+
                 bLimit = true;
 
             }
@@ -1233,14 +1233,14 @@ bool GeneralIK::_SolveNathan(std::vector<dReal>& q_s)
         if(bLimit)
             return false;
         //sleep(0.1);
-  
+
 
 
 
 
     }
     return false;
-    
+
 }
 
 
@@ -1286,7 +1286,7 @@ void GeneralIK::QToTheta(const std::vector<TF_Type>& whichTF_in, const std::vect
 
 void GeneralIK::GetD(const std::vector<TF_Type>& whichTF_in, const std::vector<dReal>& theta_in, NEWMAT::DiagonalMatrix& D)
 {
-    
+
     for(int i = 0; i < _numdofs; i++)
     {
         if(whichTF_in[i] == TF_Sigmoid)
@@ -1300,7 +1300,7 @@ void GeneralIK::GetD(const std::vector<TF_Type>& whichTF_in, const std::vector<d
             D[i] = LINEAR_TF_SLOPE;
         }
 
-    }   
+    }
 }
 
 /*
@@ -1325,9 +1325,9 @@ void GeneralIK::invConditioning(dReal maxConditionNumber, NEWMAT::SymmetricMatri
 
     //this just reconstructs the A matrix with better conditioning
 	//Afixed << _V * _S * _V.t();
-    
 
-    //this will do the inversion 
+
+    //this will do the inversion
     Afixed << _V * _S.i() * _V.t();
 
 }
@@ -1356,9 +1356,9 @@ void GeneralIK::invConditioningBound(dReal maxConditionNumber, NEWMAT::Symmetric
 
     //this just reconstructs the A matrix with better conditioning
 	//Afixed << _V * _S * _V.t();
-    
 
-    //this will do the inversion 
+
+    //this will do the inversion
     Afixed << _V * _S.i() * _V.t();
 
 }
@@ -1385,9 +1385,9 @@ void GeneralIK::invConditioning(dReal maxConditionNumber, NEWMAT::SymmetricMatri
 
     //this just reconstructs the A matrix with better conditioning
 	//Afixed << _V * _S * _V.t();
-    
 
-    //this will do the inversion 
+
+    //this will do the inversion
     Afixed << _V * _S.i() * _V.t();
 
 }

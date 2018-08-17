@@ -40,7 +40,7 @@ GeneralIK::GeneralIK(EnvironmentBasePtr penv) : IkSolverBase(penv)
 {
     __description = ":Interface Author: Dmitry Berenson\nAn iterative IK solver for kinematic chains. Can also take into account balance constraints. \n\n`C++ Documentation <http://automation.berkeley.edu/~berenson/docs/generalik/index.html>`_";
 
-    _pEnvironment = penv; 
+    _pEnvironment = penv;
 }
 
 
@@ -52,7 +52,7 @@ bool GeneralIK::Init(const RobotBase::ManipulatorPtr pmanip)
     std::vector<KinBodyPtr> bodies;
     _pEnvironment->GetBodies(bodies);
     _pObstacle = bodies;
-    
+
     bPRINT = false;
     bDRAW = false;
     bWRITETRAJ = false;
@@ -135,10 +135,10 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
     _targmanips.resize(0);
     _targtms.resize(0);
     movementlimit = INF;
-    
+
     bool bsuccess = true;
     _pRobot->GetActiveDOFLimits(_lowerLimit,_upperLimit);
-    
+
     int numdofs = _pRobot->GetActiveDOF();
 
     std::vector<dReal> q_s(numdofs);
@@ -250,7 +250,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
             KinBody::LinkPtr link_1 = _pRobot->GetLinks()[link_index_1];
             KinBody::LinkPtr link_2 = _pRobot->GetLinks()[link_index_2];
             self_collision_checking_pairs.push_back(std::pair<string,string>(link_1->GetName(),link_2->GetName()));
-        }        
+        }
 
         int obstacle_number = (int) pFreeParameters[offset++];
         std::vector<KinBodyPtr> tempobstacle;
@@ -287,9 +287,9 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         cogtarg.x = pFreeParameters[offset++];
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
-    
+
         if(bPRINT)
-            RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);    
+            RAVELOG_INFO("cog target: %f %f %f\n",cogtarg.x,cogtarg.y,cogtarg.z);
 
         //read in the support polygon
         int numpoints = pFreeParameters[offset++];
@@ -343,7 +343,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
             }
         }
 
-        // sample around cog to find afeasible cog
+        // sample around cog to find a feasible cog
         if(cog_specified == 0)
         {
             bool valid_goal_found = false;
@@ -433,7 +433,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
 
     //     // getchar();
     //     // graphptrs.clear();
-        
+
     // }
 
 
@@ -449,7 +449,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
         cogtarg.y = pFreeParameters[offset++];
         cogtarg.z = pFreeParameters[offset++];
     }
-    
+
     if(vFreeParameters.size()-1 == offset)
     {
         movementlimit = pFreeParameters[offset];
@@ -480,7 +480,7 @@ bool GeneralIK::Solve(const IkParameterization& param, const std::vector<dReal>&
 
 
     _numdofs = numdofs;
-    
+
 
     if( (_oldnumdofs != _numdofs) || (_oldnumtargdims != _numtargdims) )
     {
@@ -605,7 +605,7 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
 
     _pRobot->CalculateActiveAngularVelocityJacobian(_pRobot->GetActiveManipulator()->GetEndEffector()->GetIndex(), temp);
     memcpy(_Jr0.Store(),&temp[0],temp.size()*sizeof(dReal));
-    
+
     //PrintMatrix(_Jr0.Store(),3,_numdofs,"Jr0: ");
 
     _TMtask = TransformMatrix(taskframe_in.inverse());
@@ -639,9 +639,9 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
 
 
         NEWMAT::Matrix angveltoquat(4,4);
-        
+
         for(int i =1; i <= _numdofs; i++)
-        {   
+        {
             //get correction matrix using angular velocity from Jr
             angveltoquat(1,1) = 0;          angveltoquat(1,2) = -_Jr(1,i);    angveltoquat(1,3) = -_Jr(2,i);  angveltoquat(1,4) = -_Jr(3,i);
             angveltoquat(2,1) = _Jr(1,i);   angveltoquat(2,2) = 0;            angveltoquat(2,3) = -_Jr(3,i);  angveltoquat(2,4) = _Jr(2,i);
@@ -658,8 +658,8 @@ void GeneralIK::GetFullJacobian(Transform tEE, Transform taskframe_in, NEWMAT::M
     else
     {
 
-        //convert current rotation to euler angles (RPY) 
-        QuatToRPY(taskframe_in.inverse()*tEE,_psi,_theta,_phi);    
+        //convert current rotation to euler angles (RPY)
+        QuatToRPY(taskframe_in.inverse()*tEE,_psi,_theta,_phi);
         //RAVELOG_INFO("psi:  %f  theta:  %f   phi:  %f\n",psi,theta,phi);
 
         Cphi = cos(_phi);
@@ -736,7 +736,7 @@ void GeneralIK::GetCOGJacobian(Transform taskframe_in, NEWMAT::Matrix& J, Vector
     if( fTotalMass > 0 )
         center /= fTotalMass;
     // RAVELOG_INFO("\nmass: %f\ncog: %f %f %f\n",fTotalMass,center.x,center.y,center.z);
-   
+
     J = J/fTotalMass;
 
 }
@@ -751,7 +751,7 @@ void GeneralIK::GetOAJacobian(Transform taskframe_in, NEWMAT::Matrix& J, std::mu
     //center = Vector(0,0,0,0);
     dReal fTotalMass = 0;
     //std::vector<KinBody::LinkPtr>::const_iterator itlink;
-    
+
 
     _TMtask = TransformMatrix(taskframe_in.inverse());
     _tasktm(1,1) = _TMtask.m[0];        _tasktm(1,2) = _TMtask.m[1];        _tasktm(1,3) = _TMtask.m[2];
@@ -778,7 +778,7 @@ void GeneralIK::PrintMatrix(dReal* pMatrix, int numrows, int numcols, const char
     stringstream s;
     s.setf(ios::fixed,ios::floatfield);
     s.precision(5);
-    s << "\n"; 
+    s << "\n";
     if(statement != NULL)
         s << statement <<"\n";
     for(int i = 0; i < numrows; i++)
@@ -807,7 +807,7 @@ Vector GeneralIK::RPYIdentityOffsets[8] = { Vector(M_PI,M_PI,M_PI),
 
 void GeneralIK::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
 {
-    
+
     a = tm.rot.x;
     b = tm.rot.y;
     c = tm.rot.z;
@@ -817,7 +817,7 @@ void GeneralIK::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
     psi = atan2(2*a*b + 2*c*d, a*a - b*b - c*c + d*d); //psi
     theta = -asin(2*b*d-2*a*c); //theta
     phi = atan2(2*a*d+2*b*c, a*a + b*b - c*c - d*d); //phi
-    
+
 
     //go through all the identities and find which one minimizes the total rotational distance
     //don't need to consider +/-2pi b/c all three angles are between -pi and pi
@@ -837,7 +837,7 @@ void GeneralIK::QuatToRPY(Transform tm, dReal& psi, dReal& theta, dReal& phi)
             _temp_vec.y = -theta + RPYIdentityOffsets[i-1].y;//note that theta is negative
             _temp_vec.z = phi + RPYIdentityOffsets[i-1].z;
         }
-        
+
         _temp_dist = _temp_vec.lengthsqr3();
         if(_temp_dist < _min_dist)
         {
@@ -883,7 +883,7 @@ bool GeneralIK::CheckSupport(Vector center)
         NEWMAT::ColumnVector giwc_test_vector(6);
         giwc_test_vector << gravity.x << gravity.y << gravity.z
                          << crossprod.x << crossprod.y << crossprod.z;
-        
+
         NEWMAT::ColumnVector result = giwc * giwc_test_vector;
 
         balanced = true;
@@ -949,16 +949,16 @@ int GeneralIK::invConditioningBound(dReal maxConditionNumber, NEWMAT::SymmetricM
         if (e < minEigDesired) {e = minEigDesired; didfix = 1; if(bPRINT) RAVELOG_INFO("MIN EIG COND FIX!\n");}
         else
             notfixcount++;
-            
+
         if (maxEig > 100) { e = e/maxEig*100; if(bPRINT) RAVELOG_INFO("MAX EIG COND FIX!\n");}
         _S(i) = e;
     }
     if(bPRINT) RAVELOG_INFO("notfixcount: %d\n",notfixcount);
     //this just reconstructs the A matrix with better conditioning
     //Afixed << _V * _S * _V.t();
-    
 
-    //this will do the inversion 
+
+    //this will do the inversion
     Afixed << _V * _S.i() * _V.t();
     return didfix;
 }
@@ -985,9 +985,9 @@ void GeneralIK::invConditioning(dReal maxConditionNumber, NEWMAT::SymmetricMatri
 
     //this just reconstructs the A matrix with better conditioning
     //Afixed << _V * _S * _V.t();
-    
 
-    //this will do the inversion 
+
+    //this will do the inversion
     Afixed << _V * _S.i() * _V.t();
 
 }
@@ -1106,7 +1106,7 @@ void GeneralIK::GetDistanceFromLineSegment(dReal cx, dReal cy, dReal ax, dReal a
 
 void GeneralIK::WriteTraj()
 {
-  
+
     //TrajectoryBasePtr pfulltraj = RaveCreateTrajectory(GetEnv(),"");
     //_pRobot->GetFullTrajectoryFromActive(pfulltraj, ptraj);
 #if OPENRAVE_VERSION >= OPENRAVE_VERSION_COMBINED(0,7,0)
@@ -1140,8 +1140,8 @@ bool GeneralIK::CheckDOFValueIntegrity(const std::vector<dReal>& q_in)
         {
             RAVELOG_INFO("ERROR: DOF %d is nan!\n",i);
             bok = false;
-        }  
-    }    
+        }
+    }
     return bok;
 }
 
@@ -1290,7 +1290,8 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                GetCOGJacobian(Transform(),Jtemp2,curcog);
             }
 
-            balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog)));
+            balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog) && (curcog.z < 1.05 && curcog.z > 0.95)));
+            // balanced = (balance_mode == BALANCE_NONE || CheckSupport(curcog));
             // balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog) && sqrt((curcog-cogtarg).lengthsqr2()) <= 0.2 && fabs(curcog.z-cogtarg.z) <= 0.1));
             // balanced = (balance_mode == BALANCE_NONE || (CheckSupport(curcog) && sqrt((curcog-cogtarg).lengthsqr2()) <= 0.2));
 
@@ -1323,8 +1324,8 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                         bBalanceGradient = true;
                         balancedx(1) = (curcog.x - cogtarg.x);
                         balancedx(2) = (curcog.y - cogtarg.y);
-                        // balancedx(3) = (curcog.z - cogtarg.z);
-                        balancedx(3) = 0;
+                        balancedx(3) = (curcog.z - cogtarg.z);
+                        // balancedx(3) = 0;
                    }
                    else
                    {
@@ -1374,7 +1375,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
 
             Jplus = J.t()*Minv;
             // Jplus = Winv*J.t()*Minv;
-            
+
             //PrintMatrix(Jplus.Store(),_numdofs,_numtargdims,"Jplus: ");
 
             //Add collision avoidance here
@@ -1442,7 +1443,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 }
 
                 repulsive_vector_column.ReleaseAndDelete();
- 
+
             }
 
             if(bBalanceGradient)
@@ -1463,7 +1464,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 {
                     nullspacestep = (NEWMAT::IdentityMatrix(_numdofs) - Jplus*J)*Jtemp2plus*(1.0*balancedx);
                 }
-                
+
             }
             else
             {
@@ -1503,7 +1504,7 @@ bool GeneralIK::_SolveStopAtLimits(std::vector<dReal>& q_s)
                 {
                     if(bPRINT)
                         RAVELOG_INFO("Jacobian going past joint limit. J%d: %f outside %f to %f\n",i,q_s[i],_lowerLimit[i],_upperLimit[i]);
-                    
+
                     if(q_s[i] < _lowerLimit[i])
                         q_s[i] = _lowerLimit[i];
                     if(q_s[i] > _upperLimit[i])
@@ -1626,7 +1627,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
             //                 nearest_point.x = -box_extents.x/2;
             //             else
             //                 nearest_point.x = obstacle_frame_control_point_position.x;
-                        
+
             //             if(obstacle_frame_control_point_position.y > box_extents.y/2)
             //                 nearest_point.y = box_extents.y/2;
             //             else if(obstacle_frame_control_point_position.y < -box_extents.y/2)
@@ -1687,7 +1688,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
             //                     nearest_point.z = obstacle_frame_control_point_position.z;
 
             //                 repulsive_vector_component = obstacle_frame_control_point_position - nearest_point;
-            //                 dist_to_obstacle = repulsive_vector_component.lengthsqr3();                    
+            //                 dist_to_obstacle = repulsive_vector_component.lengthsqr3();
             //             }
             //             else
             //             {
@@ -1741,7 +1742,7 @@ void GeneralIK::GetRepulsiveVector(Vector& repulsive_vector, std::multimap<strin
                 shortest_dist = 0;
             }
         }
-        
+
     }
 
     if(repulsive_vector.lengthsqr3() != 0)
