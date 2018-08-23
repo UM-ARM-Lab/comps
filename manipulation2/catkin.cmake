@@ -19,12 +19,15 @@ find_package(Boost REQUIRED regex system)
 catkin_package()
 catkin_python_setup()
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
+
 # Some system dependencies don't have 'find_package' macros.  For these
 # packages, CMake includes a helper function which can resolve the libraries
 # using pkg-config, which most libraries support, and catkin builds generate.
  
 # Add ALL the includes we need to build: stuff from catkin AND system dependencies.
 include_directories(
+    SYSTEM
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
 )
