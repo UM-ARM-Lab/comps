@@ -25,7 +25,7 @@ catkin_package()
 # using pkg-config, which most libraries support, and catkin builds generate.
  
 # Add ALL the includes we need to build: stuff from catkin AND system dependencies.
-include_directories(
+include_directories(SYSTEM
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
     ${CDD_INCLUDE_DIRS}

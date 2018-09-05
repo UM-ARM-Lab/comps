@@ -14,6 +14,8 @@ find_package(catkin REQUIRED COMPONENTS openrave_catkin)
 # foo_INCLUDE_DIRS, foo_LIBRARIES, foo_LIBRARY_DIRS
 find_package(Boost REQUIRED regex system)
 find_package(OpenRAVE REQUIRED)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+find_package(CDD REQUIRED)
  
 # Set up the ROS Catkin package settings.
 catkin_package()
@@ -24,10 +26,11 @@ catkin_python_setup()
 # using pkg-config, which most libraries support, and catkin builds generate.
  
 # Add ALL the includes we need to build: stuff from catkin AND system dependencies.
-include_directories(
+include_directories(SYSTEM
     ${catkin_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
     ${OpenRAVE_INCLUDE_DIRS}
+    ${CDD_INCLUDE_DIRS}
 )
 
 # CMake has add_executable and add_library functions to define build 'targets'.
